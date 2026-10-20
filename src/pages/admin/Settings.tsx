@@ -95,6 +95,7 @@ export default function AdminSettingsPage() {
             <Input label="Antecedência mínima (min)" type="number" min={0} value={s.min_notice_minutes} onChange={num('min_notice_minutes')} hint="Quanto antes do início o cliente precisa reservar." />
             <Input label="Reservar com até (dias)" type="number" min={1} max={365} value={s.max_advance_days} onChange={num('max_advance_days')} />
             <Input label="Cancelar até (horas antes)" type="number" min={0} max={168} value={s.cancel_min_hours} onChange={num('cancel_min_hours')} hint="Depois disso, só a recepção cancela." />
+            <Input label="Validade das horas devolvidas (dias)" type="number" min={0} max={3650} value={s.bank_credit_days} onChange={num('bank_credit_days')} hint="Reserva paga e cancelada devolve as horas ao banco de horas do cliente. 0 = sem validade." />
             <Input label="Limite de reservas futuras" type="number" min={0} value={s.max_upcoming_bookings} onChange={num('max_upcoming_bookings')} hint="Por cliente. 0 = sem limite." />
             <Input label="Repetição semanal (máx.)" type="number" min={0} max={52} value={s.max_recurrence_weeks} onChange={num('max_recurrence_weeks')} hint="Semanas extras. 0 = desativa." />
           </div>

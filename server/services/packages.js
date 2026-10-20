@@ -41,22 +41,43 @@ export const presentPackage = (p) => ({
 
 /* ---------------- saldo e consumo ---------------- */
 
-/** Compras pagas e ainda válidas na data, com as horas que sobram em cada uma (a que vence primeiro vem antes). */
-export async function packageLots(conn, userId, date, excludeBookingId = null) {
-  const rows = await conn.query(
-    `SELECT p.id, p.name, p.minutes_total, p.expires_at,
+/** De onde vieram as horas de um lote do banco de horas. */
+export const LOT_SOURCES = ['package', 'cancellation', 'manual'];
+
+/** Lote do banco de horas como a API devolve (com a reserva de origem, quando houver). */
+const presentLot = (r) => ({
+  id: Number(r.id),
+  source: LOT_SOURCES.includes(r.source) ? r.source : 'package',
+  name: r.name,
+  note: r.note ?? '',
+  minutes_total: Number(r.minutes_total),
+  remaining: Number(r.remaining),
+  expires_at: r.expires_at,
+  created_at: r.created_at,
+  origin_booking: r.origin_code
+    ? { code: r.origin_code, room: r.origin_room, date: r.origin_date, start_time: r.origin_start }
+    : null,
+});
+
+const LOT_SELECT = `SELECT p.id, p.user_id, p.source, p.name, p.note, p.minutes_total, p.expires_at, p.created_at,
+            ob.code AS origin_code, ob.date AS origin_date, ob.start_time AS origin_start, orr.name AS origin_room,
             p.minutes_total - COALESCE((
               SELECT SUM(u.minutes) FROM package_usage u JOIN bookings b ON b.id = u.booking_id
-               WHERE u.purchase_id = p.id AND b.status IN (${COUNTING})${excludeBookingId ? ' AND b.id <> ?' : ''}
+               WHERE u.purchase_id = p.id AND b.status IN (${COUNTING})__EXCLUDE__
             ), 0) AS remaining
        FROM package_purchases p
+       LEFT JOIN bookings ob ON ob.id = p.booking_id
+       LEFT JOIN rooms orr ON orr.id = ob.room_id`;
+
+/** Lotes pagos e ainda válidos na data, com as horas que sobram em cada um (o que vence primeiro vem antes). */
+export async function packageLots(conn, userId, date, excludeBookingId = null) {
+  const rows = await conn.query(
+    `${LOT_SELECT.replace('__EXCLUDE__', excludeBookingId ? ' AND b.id <> ?' : '')}
       WHERE p.user_id = ? AND p.status = 'paid' AND (p.expires_at IS NULL OR p.expires_at >= ?)
       ORDER BY CASE WHEN p.expires_at IS NULL THEN 1 ELSE 0 END, p.expires_at, p.id`,
     excludeBookingId ? [excludeBookingId, userId, date] : [userId, date],
   );
-  return rows
-    .map((r) => ({ id: Number(r.id), name: r.name, minutes_total: Number(r.minutes_total), expires_at: r.expires_at, remaining: Number(r.remaining) }))
-    .filter((r) => r.remaining > 0);
+  return rows.map(presentLot).filter((r) => r.remaining > 0);
 }
 
 /** Quanto do saldo cobre `minutes` numa reserva na data, e de qual compra sai cada parte. Não grava nada. */
@@ -192,6 +213,7 @@ export async function listPurchases(limit = 100) {
                WHERE x.purchase_id = p.id AND b.status IN (${COUNTING})
             ), 0) AS used_left
        FROM package_purchases p JOIN users u ON u.id = p.user_id
+      WHERE p.source = 'package'
       ORDER BY p.id DESC LIMIT ?`,
     [limit],
   );
@@ -214,4 +236,108 @@ export async function listPurchases(limit = 100) {
       created_at: p.created_at,
     };
   });
+}
+
+/* ---------------- banco de horas: outras origens ---------------- */
+
+/** Cria um lote de horas já pago/válido (reserva cancelada ou ajuste da recepção). */
+async function creditLot(conn, { userId, minutes, source, name, note = '', bookingId = null, validityDays, createdBy = null }) {
+  const stamp = nowStamp();
+  const expires = validityDays > 0 ? addDays(nowLocal().date, validityDays) : null;
+  const r = await conn.run(
+    `INSERT INTO package_purchases (user_id, package_id, name, minutes_total, price_cents, validity_days, status, paid_at, expires_at, source, booking_id, note, created_by, created_at, updated_at)
+     VALUES (?, NULL, ?, ?, 0, ?, 'paid', ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [userId, name, minutes, validityDays, stamp, expires, source, bookingId, note.slice(0, 255), createdBy, stamp, stamp],
+  );
+  return r.insertId;
+}
+
+/**
+ * Reserva paga que foi cancelada: as horas pagas voltam como crédito no banco de horas do cliente, em vez de se perderem.
+ * Só conta o que foi pago em dinheiro (as horas do plano e as de pacote já voltam sozinhas). Devolve os minutos creditados.
+ */
+export async function creditCancelledBooking(row, actorId = null, conn = db) {
+  if (row.payment_status !== 'paid' || Number(row.price_cents) <= 0) return 0;
+  const minutes = Number(row.total_minutes) - Number(row.included_minutes) - Number(row.package_minutes ?? 0);
+  if (minutes <= 0) return 0;
+  if (await conn.get("SELECT id FROM package_purchases WHERE source = 'cancellation' AND booking_id = ? AND status = 'paid'", [row.id])) return 0;
+
+  const days = (await getSettings()).bank_credit_days ?? 90;
+  await creditLot(conn, {
+    userId: Number(row.user_id),
+    minutes,
+    source: 'cancellation',
+    name: `Reserva cancelada ${row.code}`,
+    note: `${row.room_name ?? 'Sala'} · ${String(row.date).split('-').reverse().join('/')} ${row.start_time}`,
+    bookingId: Number(row.id),
+    validityDays: Number(days),
+    createdBy: actorId,
+  });
+  return minutes;
+}
+
+/** Reserva reativada: o crédito que ela tinha gerado sai do banco, se ainda não foi usado. */
+export async function revokeCancellationCredit(bookingId, conn = db) {
+  const lot = await conn.get("SELECT id, minutes_total FROM package_purchases WHERE source = 'cancellation' AND booking_id = ? AND status = 'paid'", [bookingId]);
+  if (!lot) return false;
+  const used = await conn.get('SELECT COALESCE(SUM(minutes), 0) AS n FROM package_usage WHERE purchase_id = ?', [lot.id]);
+  if (Number(used.n) > 0) return false;
+  await conn.run("UPDATE package_purchases SET status = 'cancelled', updated_at = ? WHERE id = ?", [nowStamp(), lot.id]);
+  return true;
+}
+
+/** Crédito manual da recepção (cortesia, correção, reposição...). O motivo fica registrado no lote. */
+export async function addManualCredit({ actor, userId, minutes, validityDays, note }) {
+  const user = await db.get("SELECT id FROM users WHERE id = ? AND active = 1 AND role = 'client'", [userId]);
+  if (!user) throw new HttpError(404, 'Cliente não encontrado.');
+  const days = validityDays ?? Number((await getSettings()).bank_credit_days ?? 90);
+  return creditLot(db, { userId, minutes, source: 'manual', name: 'Ajuste da recepção', note, validityDays: days, createdBy: actor.id });
+}
+
+/** Tira um lote do banco (o que ainda não foi usado deixa de valer). Reservas já feitas com ele continuam como estão. */
+export async function revokeLot(lotId) {
+  const lot = await db.get("SELECT id, status FROM package_purchases WHERE id = ? AND status = 'paid'", [lotId]);
+  if (!lot) throw new HttpError(404, 'Lote não encontrado ou já encerrado.');
+  await db.run("UPDATE package_purchases SET status = 'cancelled', updated_at = ? WHERE id = ?", [nowStamp(), lotId]);
+}
+
+/** Visão da administração: cada cliente com saldo e, dentro dele, os lotes e de onde vem cada um. */
+export async function bankOverview() {
+  const today = nowLocal().date;
+  const rows = await db.query(
+    `${LOT_SELECT.replace('__EXCLUDE__', '')}
+      WHERE p.status = 'paid' AND (p.expires_at IS NULL OR p.expires_at >= ?)
+      ORDER BY CASE WHEN p.expires_at IS NULL THEN 1 ELSE 0 END, p.expires_at, p.id`,
+    [today],
+  );
+  const lots = rows.map((r) => ({ user_id: Number(r.user_id), ...presentLot(r) })).filter((l) => l.remaining > 0);
+  const ids = [...new Set(lots.map((l) => l.user_id))];
+  const users = ids.length
+    ? await db.query(`SELECT id, name, email, phone FROM users WHERE id IN (${ids.map(() => '?').join(',')})`, ids)
+    : [];
+  const byId = new Map(users.map((u) => [Number(u.id), u]));
+  const soon = addDays(today, 30);
+
+  const clients = ids.map((uid) => {
+    const mine = lots.filter((l) => l.user_id === uid);
+    const u = byId.get(uid);
+    return {
+      user_id: uid,
+      name: u?.name ?? '—',
+      email: u?.email ?? '',
+      phone: u?.phone ?? '',
+      minutes_available: mine.reduce((a, l) => a + l.remaining, 0),
+      lots: mine,
+    };
+  }).sort((a, b) => b.minutes_available - a.minutes_available || a.name.localeCompare(b.name, 'pt-BR'));
+
+  return {
+    clients,
+    totals: {
+      clients: clients.length,
+      minutes: clients.reduce((a, c) => a + c.minutes_available, 0),
+      expiring_minutes: lots.filter((l) => l.expires_at && l.expires_at <= soon).reduce((a, l) => a + l.remaining, 0),
+      by_source: Object.fromEntries(LOT_SOURCES.map((s) => [s, lots.filter((l) => l.source === s).reduce((a, l) => a + l.remaining, 0)])),
+    },
+  };
 }

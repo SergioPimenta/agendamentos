@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   BarChart3, Cake, CalendarCheck, CalendarDays, CalendarPlus, DoorOpen, LayoutDashboard, LifeBuoy, LogOut, Menu,
-  Mail, Package, QrCode, Receipt, Settings, Wallet, ShieldBan, Tags, UserRound, Users, X, ClipboardList, Leaf,
+  Hourglass, Mail, Package, QrCode, Receipt, Settings, Wallet, ShieldBan, Tags, UserRound, Users, X, ClipboardList, Leaf,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { cn } from '../../lib/cn';
@@ -35,6 +35,7 @@ const adminNav: NavItem[] = [
   { to: '/admin/salas', label: 'Salas', icon: <DoorOpen size={18} />, module: 'rooms' },
   { to: '/admin/planos', label: 'Planos', icon: <Tags size={18} />, module: 'plans' },
   { to: '/admin/pacotes', label: 'Pacotes de horas', icon: <Package size={18} />, module: 'packages' },
+  { to: '/admin/banco-de-horas', label: 'Banco de horas', icon: <Hourglass size={18} />, module: 'hour_bank' },
   { to: '/admin/bloqueios', label: 'Bloqueios', icon: <ShieldBan size={18} />, module: 'blocks' },
   { to: '/admin/financeiro', label: 'Financeiro', icon: <Wallet size={18} />, module: 'finance' },
   { to: '/admin/relatorios', label: 'Relatórios', icon: <BarChart3 size={18} />, module: 'reports' },

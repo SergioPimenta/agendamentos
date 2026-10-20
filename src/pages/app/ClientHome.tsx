@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, CalendarCheck, CalendarPlus, DoorOpen, Receipt, Sparkles } from 'lucide-react';
+import { ArrowRight, CalendarCheck, CalendarPlus, DoorOpen, Hourglass, Receipt, Sparkles } from 'lucide-react';
 import { BookingDetail } from '../../components/booking/BookingDetail';
 import { BookingFormModal } from '../../components/booking/BookingFormModal';
 import { BookingRow } from '../../components/booking/BookingRow';
@@ -14,7 +14,7 @@ import { useApi } from '../../hooks/useApi';
 import { useBookingMeta } from '../../hooks/useBookingMeta';
 import { firstName, fmtDuration, fmtMoney, fmtMonth } from '../../lib/format';
 import { api } from '../../services/api';
-import type { Booking, Statement } from '../../types';
+import type { Booking, ClientPackages, Statement } from '../../types';
 
 const greeting = () => {
   const h = Number(new Intl.DateTimeFormat('pt-BR', { hour: 'numeric', hourCycle: 'h23', timeZone: 'America/Sao_Paulo' }).format(new Date()));
@@ -35,6 +35,8 @@ export default function ClientHome() {
   const [editing, setEditing] = useState<Booking | null>(null);
   const upcoming = useApi(() => api.get<{ bookings: Booking[] }>('/bookings', { scope: 'upcoming' }), []);
   const usage = useApi(() => api.get<Statement>('/me/usage'), []);
+  const bank = useApi(() => api.get<ClientPackages>('/me/packages'), []);
+  const bankMinutes = bank.data?.balance.minutes_available ?? 0;
 
   const list = upcoming.data?.bookings.slice(0, 4) ?? [];
   const u = usage.data;
@@ -125,6 +127,13 @@ export default function ClientHome() {
                 </div>
               ) : (
                 <p className="text-[13.5px] leading-relaxed text-stone">Você paga apenas pelas horas que usar. <Link to="/app/planos" className="font-semibold text-sage-700">Conheça os planos</Link> com horas incluídas.</p>
+              )}
+
+              {bankMinutes > 0 && (
+                <Link to="/app/planos" className="flex items-center justify-between gap-3 rounded-2xl bg-sage-dim px-4 py-3 text-[13.5px] text-sage-800 no-underline transition-colors hover:bg-sage/25">
+                  <span className="flex items-center gap-2.5"><Hourglass size={18} className="text-sage-700" />Banco de horas: <strong className="font-semibold">{fmtDuration(bankMinutes)}</strong></span>
+                  <span className="text-[12.5px] font-semibold">Ver detalhes →</span>
+                </Link>
               )}
 
               <div className="grid grid-cols-2 gap-3 border-t border-ink/8 pt-4">

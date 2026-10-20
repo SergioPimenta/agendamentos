@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Check, Clock, MessageCircle, ShieldCheck } from 'lucide-react';
+import { Check, Hourglass, MessageCircle, ShieldCheck } from 'lucide-react';
+import { BankLots } from '../../components/plans/BankLots';
 import { PackageCard } from '../../components/plans/PackageCard';
 import { PlanCard } from '../../components/plans/PlanCard';
 import { Button, buttonClass } from '../../components/ui/Button';
 import { Badge, ErrorState, Skeleton, useConfirm, useToast } from '../../components/ui/Feedback';
 import { useAuth } from '../../contexts/AuthContext';
 import { useApi } from '../../hooks/useApi';
-import { fmtDateFull, fmtDuration, fmtMoney } from '../../lib/format';
+import { fmtDuration, fmtMoney, todayStr } from '../../lib/format';
 import { api } from '../../services/api';
 import { PageHeader } from '../../components/ui/Misc';
 import type { ClientPackages, ClientPlan, ClientPlans, HourPackage, OnlinePayment, User } from '../../types';
@@ -90,6 +91,32 @@ export default function PlansPage() {
 
       {q.error && <ErrorState message={q.error} onRetry={q.refetch} />}
 
+      {pk.data && (
+        <section className="mb-10 rounded-[24px] border border-sage-700/25 bg-cream p-6 sm:p-8" aria-labelledby="banco-titulo">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sage-dim text-sage-700"><Hourglass size={22} /></span>
+            <div className="flex-1">
+              <h2 id="banco-titulo" className="font-display text-[22px] leading-tight font-medium text-ink">Seu banco de horas</h2>
+              <p className="mt-0.5 text-[13.5px] text-stone">Horas guardadas para usar em qualquer sala. São descontadas sozinhas nas suas reservas.</p>
+            </div>
+            <div className="text-right">
+              <p className="font-display text-[30px] leading-none font-medium text-ink">{fmtDuration(pk.data.balance.minutes_available)}</p>
+              <p className="mt-1 text-[11.5px] tracking-[0.1em] text-stone uppercase">disponíveis</p>
+            </div>
+          </div>
+          {pk.data.balance.lots.length > 0 ? (
+            <div className="mt-5 border-t border-ink/8 pt-5">
+              <p className="mb-3 text-[11.5px] font-semibold tracking-[0.12em] text-stone uppercase">De onde vem o seu saldo</p>
+              <BankLots lots={pk.data.balance.lots} today={todayStr()} />
+            </div>
+          ) : (
+            <p className="mt-4 text-[13.5px] leading-relaxed text-stone">
+              Seu banco está vazio. As horas de uma reserva paga que você cancelar e os pacotes que comprar aparecem aqui.
+            </p>
+          )}
+        </section>
+      )}
+
       <div className="grid items-stretch gap-5 md:grid-cols-2 xl:grid-cols-3">
         {!d ? [0, 1, 2].map((i) => <Skeleton key={i} className="h-[520px] rounded-[24px]" />) : d.plans.map((p) => {
           const current = p.id === d.current_plan_id;
@@ -129,32 +156,12 @@ export default function PlansPage() {
         })}
       </div>
 
-      {pk.data && (pk.data.packages.length > 0 || pk.data.balance.minutes_available > 0) && (
+      {pk.data && pk.data.packages.length > 0 && (
         <section className="mt-14" aria-labelledby="pacotes-titulo">
           <h2 id="pacotes-titulo" className="font-display text-[clamp(1.5rem,2.4vw,1.9rem)] font-medium text-ink">Pacotes de horas</h2>
           <p className="mt-1.5 max-w-[62ch] text-[14px] leading-relaxed text-stone">
-            Compre horas de sala de uma vez e use quando quiser. O saldo é descontado automaticamente nas suas reservas, depois das horas do seu plano.
+            Compre horas de sala de uma vez e use quando quiser. As horas vão para o seu banco de horas e são descontadas automaticamente nas reservas, depois das horas do seu plano.
           </p>
-
-          {pk.data.balance.minutes_available > 0 && (
-            <div className="mt-5 rounded-[22px] border border-sage-700/25 bg-cream p-5 sm:p-6">
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sage-dim text-sage-700"><Clock size={20} /></span>
-                <div>
-                  <p className="text-[11px] font-semibold tracking-[0.12em] text-stone uppercase">Seu saldo de pacotes</p>
-                  <p className="font-display text-[26px] leading-tight font-medium text-ink">{fmtDuration(pk.data.balance.minutes_available)} <span className="text-[14px] font-normal text-stone">disponíveis</span></p>
-                </div>
-              </div>
-              <ul className="mt-4 flex flex-col gap-2 border-t border-ink/8 pt-4 text-[13px] text-stone">
-                {pk.data.balance.lots.map((l) => (
-                  <li key={l.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-0.5">
-                    <span><strong className="font-semibold text-ink">{l.name}</strong> · restam {fmtDuration(l.remaining)} de {fmtDuration(l.minutes_total)}</span>
-                    <span className="text-stone-light">{l.expires_at ? `vale até ${fmtDateFull(l.expires_at)}` : 'sem validade'}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
 
           {pk.data.packages.length > 0 && (
             <div className="mt-6 grid items-stretch gap-5 md:grid-cols-2 xl:grid-cols-3">

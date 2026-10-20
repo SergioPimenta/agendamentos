@@ -3,7 +3,7 @@ import { db } from '../db/index.js';
 
 let cache = null;
 
-const NUMBERS = ['slot_step_minutes', 'min_notice_minutes', 'max_advance_days', 'cancel_min_hours', 'max_upcoming_bookings', 'max_recurrence_weeks', 'invoice_due_day', 'pagarme_expires_minutes', 'booking_hold_minutes', 'pagarme_max_installments', 'checkin_window_minutes', 'overtime_grace_minutes', 'auto_close_minutes'];
+const NUMBERS = ['slot_step_minutes', 'min_notice_minutes', 'max_advance_days', 'cancel_min_hours', 'max_upcoming_bookings', 'max_recurrence_weeks', 'invoice_due_day', 'pagarme_expires_minutes', 'booking_hold_minutes', 'pagarme_max_installments', 'checkin_window_minutes', 'overtime_grace_minutes', 'auto_close_minutes', 'bank_credit_days'];
 const BOOLS = ['require_approval', 'allow_signup', 'overtime_charge', 'pagarme_enabled', 'pay_on_booking'];
 
 /** Pagamento online está ligado no painel E a chave secreta existe no servidor. */

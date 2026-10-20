@@ -12,6 +12,7 @@ export const MODULES = [
   { key: 'clients', label: 'Clientes', description: 'Cadastro de clientes, faturas e histórico.' },
   { key: 'birthdays', label: 'Aniversariantes', description: 'Aniversariantes do mês, com base na data de nascimento dos clientes.' },
   { key: 'packages', label: 'Pacotes de horas', description: 'Pacotes de horas à venda, compras dos clientes e saldos.' },
+  { key: 'hour_bank', label: 'Banco de horas', description: 'Saldo de horas de cada cliente, de onde vem e ajustes manuais.' },
   { key: 'rooms', label: 'Salas', description: 'Cadastro das salas, preços e fotos.' },
   { key: 'plans', label: 'Planos', description: 'Planos, horas incluídas e descontos.' },
   { key: 'blocks', label: 'Bloqueios', description: 'Bloqueio de horários e salas.' },

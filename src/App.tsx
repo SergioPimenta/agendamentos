@@ -27,6 +27,7 @@ const AdminAgenda = lazy(() => import('./pages/admin/Agenda'));
 const AdminBookings = lazy(() => import('./pages/admin/Bookings'));
 const AdminClients = lazy(() => import('./pages/admin/Clients'));
 const ClientsLayout = lazy(() => import('./pages/admin/ClientsLayout'));
+const AdminHourBank = lazy(() => import('./pages/admin/HourBank'));
 const AdminPackages = lazy(() => import('./pages/admin/Packages'));
 const AdminBirthdays = lazy(() => import('./pages/admin/Birthdays'));
 const AdminProfiles = lazy(() => import('./pages/admin/Profiles'));
@@ -55,7 +56,7 @@ function RequireAuth({ role }: { role?: 'admin' }) {
 /** Primeira tela do painel que cada área libera, na ordem do menu. */
 const ADMIN_HOME: [ModuleKey, string][] = [
   ['dashboard', '/admin'], ['agenda', '/admin/agenda'], ['bookings', '/admin/reservas'], ['clients', '/admin/clientes'],
-  ['birthdays', '/admin/aniversariantes'], ['rooms', '/admin/salas'], ['plans', '/admin/planos'], ['packages', '/admin/pacotes'],['blocks', '/admin/bloqueios'], ['finance', '/admin/financeiro'],
+  ['birthdays', '/admin/aniversariantes'], ['rooms', '/admin/salas'], ['plans', '/admin/planos'], ['packages', '/admin/pacotes'], ['hour_bank', '/admin/banco-de-horas'], ['blocks', '/admin/bloqueios'], ['finance', '/admin/financeiro'],
   ['reports', '/admin/relatorios'], ['qrcodes', '/admin/qr-codes'], ['email_templates', '/admin/modelos-de-email'],
   ['settings', '/admin/configuracoes'], ['profiles', '/admin/clientes/perfis'],
 ];
@@ -146,6 +147,7 @@ export default function App() {
               <Route element={<RequireModule module="rooms" />}><Route path="salas" element={<AdminRooms />} /></Route>
               <Route element={<RequireModule module="plans" />}><Route path="planos" element={<AdminPlans />} /></Route>
               <Route element={<RequireModule module="packages" />}><Route path="pacotes" element={<AdminPackages />} /></Route>
+              <Route element={<RequireModule module="hour_bank" />}><Route path="banco-de-horas" element={<AdminHourBank />} /></Route>
               <Route element={<RequireModule module="blocks" />}><Route path="bloqueios" element={<AdminBlocks />} /></Route>
               <Route element={<RequireModule module="finance" />}>
                 <Route path="financeiro" element={<FinanceLayout />}>

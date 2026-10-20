@@ -6,7 +6,7 @@ import { MAX_GUESTS, guestsToDb, normalizeGuests, parseGuests } from '../utils/g
 import { bookingToIcs } from '../utils/ics.js';
 import { sendTemplated } from './emailTemplates.js';
 import { onlinePaymentsReady } from './settings.js';
-import { planPackageUse, savePackageUse } from './packages.js';
+import { creditCancelledBooking, planPackageUse, revokeCancellationCredit, savePackageUse } from './packages.js';
 import { sessionInfo } from './sessionState.js';
 import { addDays, addMinutesAt, minutesBetween, monthRange, nowLocal, nowStamp } from '../utils/time.js';
 import { getSettings } from './settings.js';
@@ -338,19 +338,22 @@ export async function cancelBooking({ actor, id, reason = '', scope = 'one' }) {
   }
 
   const stamp = nowStamp();
+  let credited = 0; // minutos pagos que voltaram para o banco de horas do cliente
   for (const bid of ids) {
+    const before = bid === id ? row : await getBookingRow(bid);
     await db.run(
       `UPDATE bookings SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, cancel_reason = ?,
               payment_status = CASE WHEN payment_status = 'paid' THEN 'paid' ELSE 'none' END, updated_at = ?
         WHERE id = ?`,
       [stamp, actor.id, reason.slice(0, 250), stamp, bid],
     );
+    credited += await creditCancelledBooking(before, actor.id);
   }
 
   const fresh = await getBookingRow(id);
   notifyCancelled(fresh, isAdmin && Number(fresh.user_id) !== Number(actor.id)).catch(() => {});
   if (row.status === 'confirmed') notifyGuests('guest_cancelled', id).catch(() => {}); // só quem chegou a ser convidado
-  return { cancelled: ids.length, booking: serializeBooking(fresh, { rules, now, isAdmin, viewerId: actor.id }) };
+  return { cancelled: ids.length, credited_minutes: credited, booking: serializeBooking(fresh, { rules, now, isAdmin, viewerId: actor.id }) };
 }
 
 /** Ações exclusivas da administração: confirmar, marcar falta, reativar. */
@@ -373,6 +376,7 @@ export async function changeStatus({ actor, id, status }) {
         [pricing.included_minutes, pricing.package_minutes, pricing.price_cents, pricing.payment_status, nowStamp(), id],
       );
       await savePackageUse(tx, id, pricing.package_allocations);
+      await revokeCancellationCredit(id, tx); // a reserva voltou: o crédito que ela tinha gerado sai do banco (se não foi usado)
     });
   } else {
     await db.run('UPDATE bookings SET status = ?, updated_at = ? WHERE id = ?', [status, nowStamp(), id]);

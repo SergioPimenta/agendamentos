@@ -11,7 +11,7 @@ import { requireAdmin, requireModule, verifyToken } from '../middleware/auth.js'
 import { LEVELS, MODULES, canEnterPanel, fullAccess, hasAccess, normalizePermissions } from '../services/access.js';
 import { CONSUMING, OCCUPYING, getBusinessHours, inList } from '../services/availability.js';
 import { birthdaysOfMonth } from '../services/birthdays.js';
-import { grantPackage, listPurchases, presentPackage } from '../services/packages.js';
+import { addManualCredit, bankOverview, grantPackage, listPurchases, presentPackage, revokeLot } from '../services/packages.js';
 import { PLAN_ICONS, PLAN_LAYOUTS, presentShowcase } from '../services/plans.js';
 import {
   BOOKING_SELECT,
@@ -47,6 +47,7 @@ router.use('/agenda', requireModule(['agenda']));
 router.use('/bookings', requireModule(['bookings', 'agenda']));
 router.use('/birthdays', requireModule(['birthdays']));
 router.use('/packages', requireModule(['packages']));
+router.use('/hour-bank', requireModule(['hour_bank']));
 router.use('/rooms', requireModule(['rooms'], ['agenda', 'bookings']));
 router.use('/upload', requireModule(['rooms']));
 router.use('/plans', requireModule(['plans'], ['clients', 'finance']));
@@ -56,7 +57,7 @@ router.use('/reports', (req, res, next) => requireModule(['reports'], req.path =
 router.use(['/profiles', '/profiles-users'], requireModule(['profiles']));
 router.use('/users', (req, res, next) => {
   const isList = req.method === 'GET' && req.path === '/';
-  return requireModule(['clients'], isList ? ['bookings', 'agenda', 'finance', 'packages'] : [])(req, res, next);
+  return requireModule(['clients'], isList ? ['bookings', 'agenda', 'finance', 'packages', 'hour_bank'] : [])(req, res, next);
 });
 // Regras e horários do espaço são lidas por várias telas; só quem tem Configurações altera.
 router.use(['/settings', '/hours'], (req, res, next) => (req.method === 'GET' ? next() : requireModule(['settings'])(req, res, next)));
@@ -904,6 +905,42 @@ router.delete(
   }),
 );
 
+/* ---------------- banco de horas ---------------- */
+
+router.get(
+  '/hour-bank',
+  asyncHandler(async (_req, res) => {
+    res.json(await bankOverview());
+  }),
+);
+
+/** Crédito manual de horas para um cliente (cortesia, correção...). Exige o motivo. */
+router.post(
+  '/hour-bank/credit',
+  asyncHandler(async (req, res) => {
+    const d = parse(
+      z.object({
+        user_id: id,
+        minutes: z.coerce.number().int().min(15, 'Informe ao menos 15 minutos').max(100_000),
+        validity_days: z.coerce.number().int().min(0).max(3650).optional(),
+        note: z.string().trim().min(3, 'Explique o motivo do crédito').max(255),
+      }),
+      req.body,
+    );
+    const lotId = await addManualCredit({ actor: req.user, userId: d.user_id, minutes: d.minutes, validityDays: d.validity_days, note: d.note });
+    res.status(201).json({ id: lotId });
+  }),
+);
+
+/** Tira um lote do banco (ex.: crédito dado por engano). */
+router.post(
+  '/hour-bank/lots/:id/revoke',
+  asyncHandler(async (req, res) => {
+    await revokeLot(Number(req.params.id));
+    res.json({ ok: true });
+  }),
+);
+
 /* ---------------- bloqueios ---------------- */
 
 router.get(
@@ -1009,6 +1046,7 @@ router.put(
         overtime_grace_minutes: z.coerce.number().int().min(0).max(120),
         overtime_charge: z.boolean(),
         auto_close_minutes: z.coerce.number().int().min(30).max(24 * 60),
+        bank_credit_days: z.coerce.number().int().min(0).max(3650).default(90),
       }),
       req.body,
     );

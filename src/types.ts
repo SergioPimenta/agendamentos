@@ -41,7 +41,7 @@ export interface Plan extends PlanShowcase {
 /** Nível de acesso a uma área do painel: sem acesso, só consulta ou consulta e alteração. */
 export type AccessLevel = 'none' | 'view' | 'edit';
 export type ModuleKey =
-  | 'dashboard' | 'agenda' | 'bookings' | 'clients' | 'birthdays' | 'packages' | 'rooms' | 'plans' | 'blocks' | 'finance'
+  | 'dashboard' | 'agenda' | 'bookings' | 'clients' | 'birthdays' | 'packages' | 'hour_bank' | 'rooms' | 'plans' | 'blocks' | 'finance'
   | 'reports' | 'qrcodes' | 'email_templates' | 'settings' | 'profiles';
 export type Permissions = Record<ModuleKey, AccessLevel>;
 
@@ -205,6 +205,8 @@ export interface PublicSettings {
 
 export interface AdminSettings extends PublicSettings {
   max_upcoming_bookings: number;
+  /** Validade (dias) das horas devolvidas ao banco de horas por reservas canceladas; 0 = sem validade. */
+  bank_credit_days: number;
   auto_close_minutes: number;
   invoice_due_day: number;
   pay_on_booking: boolean;
@@ -416,13 +418,35 @@ export interface HourPackage {
   sold_count?: number;
 }
 
-/** O que ainda sobra de uma compra de pacote. */
+/** De onde vêm as horas de um lote do banco de horas. */
+export type LotSource = 'package' | 'cancellation' | 'manual';
+
+/** Um lote do banco de horas: o que sobra de uma compra, de uma reserva paga e cancelada ou de um ajuste da recepção. */
 export interface PackageLot {
   id: number;
+  source: LotSource;
   name: string;
+  note: string;
   minutes_total: number;
   expires_at: string | null;
   remaining: number;
+  created_at: string;
+  /** Reserva que gerou o crédito (só quando a origem é um cancelamento). */
+  origin_booking: { code: string; room: string; date: string; start_time: string } | null;
+}
+
+export interface BankClient {
+  user_id: number;
+  name: string;
+  email: string;
+  phone: string;
+  minutes_available: number;
+  lots: PackageLot[];
+}
+
+export interface BankOverview {
+  clients: BankClient[];
+  totals: { clients: number; minutes: number; expiring_minutes: number; by_source: Record<LotSource, number> };
 }
 
 export interface ClientPackages {

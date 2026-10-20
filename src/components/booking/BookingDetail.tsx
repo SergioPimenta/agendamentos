@@ -42,11 +42,11 @@ export function BookingDetail({ booking: b, admin, onClose, onEdit, onChanged }:
   if (!b) return null;
   const rel = relativeDay(b.date);
 
-  const run = async (fn: () => Promise<unknown>, ok: string) => {
+  const run = async (fn: () => Promise<unknown>, ok: string | ((result: unknown) => string)) => {
     setBusy(true);
     try {
-      await fn();
-      toast.success(ok);
+      const result = await fn();
+      toast.success(typeof ok === 'function' ? ok(result) : ok);
       onChanged();
       onClose();
     } catch (e) {
@@ -213,11 +213,23 @@ export function BookingDetail({ booking: b, admin, onClose, onEdit, onChanged }:
         footer={
           <>
             <Button variant="secondary" onClick={() => setCancelling(false)} disabled={busy}>Voltar</Button>
-            <Button variant="danger" loading={busy} onClick={() => run(() => api.post(`/bookings/${b.id}/cancel`, { reason, scope: series ? 'series' : 'one' }), series ? 'Reservas canceladas.' : 'Reserva cancelada.')}>Cancelar reserva</Button>
+            <Button variant="danger" loading={busy} onClick={() => run(
+              () => api.post<{ credited_minutes?: number }>(`/bookings/${b.id}/cancel`, { reason, scope: series ? 'series' : 'one' }),
+              (r) => {
+                const credited = (r as { credited_minutes?: number }).credited_minutes ?? 0;
+                const base = series ? 'Reservas canceladas.' : 'Reserva cancelada.';
+                return credited > 0 ? `${base} ${fmtDuration(credited)} voltaram para o banco de horas.` : base;
+              },
+            )}>Cancelar reserva</Button>
           </>
         }
       >
         <div className="flex flex-col gap-4">
+          {b.payment_status === 'paid' && b.price_cents > 0 && (
+            <p className="rounded-xl bg-sage-dim px-4 py-3 text-[13px] leading-relaxed text-sage-800">
+              Esta reserva já foi paga: as horas pagas voltam para o {admin ? 'banco de horas do cliente' : 'seu banco de horas'}, para usar em qualquer sala depois.
+            </p>
+          )}
           <Textarea label="Motivo (opcional)" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={250} rows={2} />
           {b.series_id && (
             <label className="flex items-start gap-2.5 text-[13px] text-stone">

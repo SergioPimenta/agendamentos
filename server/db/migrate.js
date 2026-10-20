@@ -328,6 +328,15 @@ const migrations = [
       `ALTER TABLE receivables ADD COLUMN package_purchase_id INT NULL`,
     ],
   },
+  {
+    // Banco de horas: cada compra de pacote é um "lote"; reservas pagas e canceladas e ajustes da recepção também viram lotes.
+    id: '014_hour_bank',
+    statements: () => [
+      `ALTER TABLE package_purchases ADD COLUMN source VARCHAR(20) NOT NULL DEFAULT 'package'`,
+      `ALTER TABLE package_purchases ADD COLUMN booking_id INT NULL`,
+      `ALTER TABLE package_purchases ADD COLUMN note VARCHAR(255) NOT NULL DEFAULT ''`,
+    ],
+  },
 ];
 
 export async function migrate() {
@@ -371,6 +380,7 @@ const DEFAULT_SETTINGS = {
   overtime_grace_minutes: '10',
   overtime_charge: 'true',
   auto_close_minutes: '180',
+  bank_credit_days: '90',
   usage_policy:
     'Aplicam-se orientações relacionadas ao uso do espaço, de acordo com as atividades que serão realizadas, sendo puramente legais sob a ótica comercial, jurídica, ética e moral.' +
     '\nRespeite o horário reservado, para que a próxima pessoa encontre a sala livre no horário combinado.',
