@@ -313,12 +313,51 @@ const rooms = [
   ['Sol', 'sol', 'A mais iluminada da casa', 4, 6000, 'sala-sol.webp', ['Wi-Fi 500 Mbps', 'Ar-condicionado', 'Luz natural', 'Café e água']],
 ];
 
+/** Plano em que todo cadastro novo começa (sem mensalidade, paga só as horas usadas). */
+export const DEFAULT_PLAN_NAME = 'Modo Brisa';
+
+// [nome, descrição, minutos incluídos por mês, ilimitado, desconto % nas horas extras, mensalidade em centavos]
 const plans = [
-  ['Avulso', 'Pague apenas pelas horas que usar.', 0, 0, 0, 0],
-  ['Day Pass', 'Inclui 1 hora de sala por mês.', 60, 0, 0, 6500],
-  ['Flex', 'Inclui 3 horas de sala por mês e 10% de desconto nas demais.', 180, 0, 10, 34900],
-  ['Sala Privativa', 'Salas de reunião ilimitadas.', 0, 1, 0, 149000],
+  [DEFAULT_PLAN_NAME, 'Sublocação esporádica: pague só pelas horas que usar, sem mensalidade. Para quem valoriza a flexibilidade.', 0, 0, 0, 0],
+  ['Plano Raiz', 'Combo de 4 horas pré-pagas para usar ao longo de 30 dias, com a hora a R$ 36,00. Base estável para atendimentos semanais.', 240, 0, 0, 14400],
+  ['Plano Ecossistema', 'Pós-pago mensalista: use primeiro e pague depois, no dia 05 do mês seguinte. Para profissionais consolidados.', 0, 0, 0, 0],
 ];
+
+/** Planos da primeira versão do sistema, substituídos pelo catálogo atual (ver `swapPlanCatalog`). */
+const LEGACY_PLAN_NAMES = ['Avulso', 'Day Pass', 'Flex', 'Sala Privativa'];
+
+/**
+ * Troca única do catálogo de planos: cria os planos atuais, passa quem estava num plano antigo para o plano padrão
+ * e apaga os antigos (com as trocas de plano deles que ainda aguardavam pagamento). Só roda uma vez por banco;
+ * planos criados depois pela administração nunca são tocados.
+ */
+async function swapPlanCatalog() {
+  if (await db.get("SELECT k FROM settings WHERE k = 'plans_catalog'")) return;
+
+  let order = 0;
+  for (const [name, description, minutes, unlimited, discount, price] of plans) {
+    if (!(await db.get('SELECT id FROM plans WHERE name = ?', [name]))) {
+      await db.run(
+        'INSERT INTO plans (name, description, included_minutes, unlimited, room_discount_percent, price_cents, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [name, description, minutes, unlimited, discount, price, order],
+      );
+    }
+    order++;
+  }
+
+  const legacy = await db.query(`SELECT id FROM plans WHERE name IN (${LEGACY_PLAN_NAMES.map(() => '?').join(',')})`, LEGACY_PLAN_NAMES);
+  if (legacy.length) {
+    const ids = legacy.map((p) => Number(p.id));
+    const marks = ids.map(() => '?').join(',');
+    const fallback = await db.get('SELECT id FROM plans WHERE name = ?', [DEFAULT_PLAN_NAME]);
+    await db.transaction(async (tx) => {
+      await tx.run(`UPDATE users SET plan_id = ? WHERE plan_id IN (${marks})`, [fallback.id, ...ids]);
+      await tx.run(`DELETE FROM receivables WHERE status = 'pending' AND plan_id IN (${marks})`, ids);
+      await tx.run(`DELETE FROM plans WHERE id IN (${marks})`, ids);
+    });
+  }
+  await db.run("INSERT INTO settings (k, v) VALUES ('plans_catalog', 'v2')");
+}
 
 export async function seed() {
   for (const [k, v] of Object.entries(DEFAULT_SETTINGS)) {
@@ -335,16 +374,7 @@ export async function seed() {
     }
   }
 
-  const planCount = await db.get('SELECT COUNT(*) AS n FROM plans');
-  if (!Number(planCount.n)) {
-    let i = 0;
-    for (const [name, description, minutes, unlimited, discount, price] of plans) {
-      await db.run(
-        'INSERT INTO plans (name, description, included_minutes, unlimited, room_discount_percent, price_cents, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [name, description, minutes, unlimited, discount, price, i++],
-      );
-    }
-  }
+  await swapPlanCatalog();
 
   const roomCount = await db.get('SELECT COUNT(*) AS n FROM rooms');
   if (!Number(roomCount.n)) {
@@ -403,11 +433,11 @@ async function seedDemo() {
   const exists = await db.get('SELECT id FROM users WHERE email = ?', ['cliente@exemplo.com']);
   if (exists) return;
 
-  const flex = await db.get("SELECT id FROM plans WHERE name = 'Flex'");
+  const raiz = await db.get("SELECT id FROM plans WHERE name = 'Plano Raiz'");
   const hash = await bcrypt.hash('cliente123', 10);
   const people = [
-    ['Sergio Pimenta', 'cliente@exemplo.com', '(41) 99999-0001', 'Pimenta Psicologia', flex.id],
-    ['Marina Albuquerque', 'marina@exemplo.com', '(41) 99999-0002', 'Terapeuta integrativa', flex.id],
+    ['Sergio Pimenta', 'cliente@exemplo.com', '(41) 99999-0001', 'Pimenta Psicologia', raiz.id],
+    ['Marina Albuquerque', 'marina@exemplo.com', '(41) 99999-0002', 'Terapeuta integrativa', raiz.id],
     ['Caio Fontana', 'caio@exemplo.com', '(41) 99999-0003', 'Fontana Consultoria', null],
     ['Helena Duarte', 'helena@exemplo.com', '(41) 99999-0004', 'Duarte Nutrição', null],
   ];
@@ -434,7 +464,7 @@ async function seedDemo() {
     [2, 1, 0, '10:00', '12:00', 'Workshop'],
     [3, 0, 0, '11:00', '12:00', 'Atendimento — Bruno'],
   ];
-  const usedByUser = new Map(); // minutos incluídos já consumidos no mês (plano Flex = 180 min, 10% off)
+  const usedByUser = new Map(); // minutos incluídos já consumidos no mês (Plano Raiz = 240 min, sem desconto)
   for (const [offset, r, u, s, e, title] of samples) {
     const date = addDays(today, offset);
     if (weekdayOf(date) === 0) continue;
@@ -442,9 +472,9 @@ async function seedDemo() {
     const minutes = toMin(e) - toMin(s);
     const hasPlan = u <= 1;
     const usedKey = `${u}-${date.slice(0, 7)}`;
-    const included = hasPlan ? Math.min(minutes, Math.max(0, 180 - (usedByUser.get(usedKey) || 0))) : 0;
+    const included = hasPlan ? Math.min(minutes, Math.max(0, 240 - (usedByUser.get(usedKey) || 0))) : 0;
     usedByUser.set(usedKey, (usedByUser.get(usedKey) || 0) + included);
-    const price = Math.round(((room.price_cents * (minutes - included)) / 60) * (hasPlan ? 0.9 : 1));
+    const price = Math.round(((room.price_cents * (minutes - included)) / 60));
     await db.run(
       `INSERT INTO bookings (code, room_id, user_id, date, start_time, end_time, start_at, end_at, status, title, attendees, total_minutes, included_minutes, price_cents, payment_status, created_by, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, 1, ?, ?, ?, ?, ?, ?, ?)`,

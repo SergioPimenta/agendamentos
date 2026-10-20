@@ -91,19 +91,19 @@ const adminId = (await db.get("SELECT id FROM users WHERE role = 'admin' ORDER B
 /* ---------------- clientes ---------------- */
 // since: há quantos dias é cliente · behavior: como paga · w: o quanto reserva · fav: forma de pagamento preferida
 const people = [
-  ['Marina Albuquerque', 'marina.albuquerque', 'Terapeuta integrativa', 'Flex', 118, 'good', 2.4, 'pix'],
-  ['Bruno Tavares', 'bruno.tavares', 'Tavares Advocacia', 'Sala Privativa', 100, 'good', 3.0, 'transferencia'],
-  ['Ana Beatriz Lima', 'ana.lima', 'Psicóloga clínica', 'Flex', 96, 'good', 2.2, 'pix'],
-  ['Caio Fontana', 'caio.fontana', 'Fontana Consultoria', 'Avulso', 90, 'late', 1.2, 'boleto'],
-  ['Juliana Rocha', 'juliana.rocha', 'Nutricionista', 'Flex', 76, 'good', 1.8, 'cartao'],
-  ['Rafael Mendes', 'rafael.mendes', 'Fisioterapeuta', 'Day Pass', 70, 'late', 1.4, 'pix'],
-  ['Helena Duarte', 'helena.duarte', 'Duarte Nutrição', 'Avulso', 56, 'good', 1.0, 'pix'],
-  ['Carolina Prado', 'carolina.prado', 'Coach de carreira', 'Avulso', 60, 'bad', 1.3, 'boleto'],
-  ['Marcos Vinícius', 'marcos.vinicius', 'Terapeuta ocupacional', 'Avulso', 50, 'good', 0.9, 'cartao'],
-  ['Patrícia Souza', 'patricia.souza', 'Massoterapeuta', 'Day Pass', 40, 'good', 1.1, 'pix'],
-  ['Eduardo Lacerda', 'eduardo.lacerda', 'Lacerda Mentoria', 'Avulso', 28, 'late', 0.8, 'dinheiro'],
-  ['Fernanda Ribeiro', 'fernanda.ribeiro', 'Psicopedagoga', 'Flex', 20, 'good', 1.2, 'pix'],
-  ['Thiago Almeida', 'thiago.almeida', 'Quiropraxia', 'Avulso', 12, 'good', 0.7, 'cartao'],
+  ['Marina Albuquerque', 'marina.albuquerque', 'Terapeuta integrativa', 'Plano Raiz', 118, 'good', 2.4, 'pix'],
+  ['Bruno Tavares', 'bruno.tavares', 'Tavares Advocacia', 'Plano Ecossistema', 100, 'good', 3.0, 'transferencia'],
+  ['Ana Beatriz Lima', 'ana.lima', 'Psicóloga clínica', 'Plano Raiz', 96, 'good', 2.2, 'pix'],
+  ['Caio Fontana', 'caio.fontana', 'Fontana Consultoria', 'Modo Brisa', 90, 'late', 1.2, 'boleto'],
+  ['Juliana Rocha', 'juliana.rocha', 'Nutricionista', 'Plano Raiz', 76, 'good', 1.8, 'cartao'],
+  ['Rafael Mendes', 'rafael.mendes', 'Fisioterapeuta', 'Plano Raiz', 70, 'late', 1.4, 'pix'],
+  ['Helena Duarte', 'helena.duarte', 'Duarte Nutrição', 'Modo Brisa', 56, 'good', 1.0, 'pix'],
+  ['Carolina Prado', 'carolina.prado', 'Coach de carreira', 'Modo Brisa', 60, 'bad', 1.3, 'boleto'],
+  ['Marcos Vinícius', 'marcos.vinicius', 'Terapeuta ocupacional', 'Modo Brisa', 50, 'good', 0.9, 'cartao'],
+  ['Patrícia Souza', 'patricia.souza', 'Massoterapeuta', 'Plano Raiz', 40, 'good', 1.1, 'pix'],
+  ['Eduardo Lacerda', 'eduardo.lacerda', 'Lacerda Mentoria', 'Modo Brisa', 28, 'late', 0.8, 'dinheiro'],
+  ['Fernanda Ribeiro', 'fernanda.ribeiro', 'Psicopedagoga', 'Plano Raiz', 20, 'good', 1.2, 'pix'],
+  ['Thiago Almeida', 'thiago.almeida', 'Quiropraxia', 'Modo Brisa', 12, 'good', 0.7, 'cartao'],
 ];
 const clients = [];
 const passwordHash = await bcrypt.hash('cliente123', 10);

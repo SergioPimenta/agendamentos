@@ -84,37 +84,37 @@ describe('o cliente escolhe o plano', () => {
     const r = await call('GET', '/me/plans', { token: client });
     assert.equal(r.status, 200);
     plans = r.body.plans;
-    assert.deepEqual(plans.map((p) => p.name), ['Avulso', 'Day Pass', 'Flex', 'Sala Privativa']);
-    assert.equal(planByName('Flex').price_cents, 34900);
-    assert.equal(r.body.current_plan_id, planByName('Avulso').id); // cadastro novo começa no Avulso
+    assert.deepEqual(plans.map((p) => p.name), ['Modo Brisa', 'Plano Raiz', 'Plano Ecossistema']);
+    assert.equal(planByName('Plano Raiz').price_cents, 14400);
+    assert.equal(r.body.current_plan_id, planByName('Modo Brisa').id); // cadastro novo começa no Modo Brisa
     assert.equal(r.body.pending_plan_id, null);
     assert.equal(r.body.online_payments, false);
     assert.equal((await call('GET', '/me/plans')).status, 401);
   });
 
   it('plano pago precisa do pagamento online ligado e não muda nada sem ele', async () => {
-    const r = await call('POST', `/me/plans/${planByName('Flex').id}/subscribe`, { token: client });
+    const r = await call('POST', `/me/plans/${planByName('Plano Raiz').id}/subscribe`, { token: client });
     assert.equal(r.status, 422);
     assert.match(r.body.message, /recepção/);
-    assert.equal(await myPlan(), 'Avulso');
+    assert.equal(await myPlan(), 'Modo Brisa');
   });
 
   it('plano pago gera a cobrança e só vale depois do pagamento confirmado', async () => {
     await saveSettings({ pagarme_enabled: 'true' });
-    const flex = planByName('Flex');
-    const r = await call('POST', `/me/plans/${flex.id}/subscribe`, { token: client });
+    const raiz = planByName('Plano Raiz');
+    const r = await call('POST', `/me/plans/${raiz.id}/subscribe`, { token: client });
     assert.equal(r.status, 201);
     assert.equal(r.body.activated, false);
     assert.match(r.body.payment.checkout_url, /^https:\/\/pay\.example\.test\//);
-    assert.equal(r.body.payment.amount_cents, 34900);
-    assert.match(r.body.payment.description, /Mensalidade Flex/);
-    assert.equal(await myPlan(), 'Avulso'); // ainda não pagou
+    assert.equal(r.body.payment.amount_cents, 14400);
+    assert.match(r.body.payment.description, /Mensalidade Plano Raiz/);
+    assert.equal(await myPlan(), 'Modo Brisa'); // ainda não pagou
 
     const list = await call('GET', '/me/plans', { token: client });
-    assert.equal(list.body.pending_plan_id, flex.id);
+    assert.equal(list.body.pending_plan_id, raiz.id);
 
     // Clicar de novo reaproveita a mesma cobrança.
-    const again = await call('POST', `/me/plans/${flex.id}/subscribe`, { token: client });
+    const again = await call('POST', `/me/plans/${raiz.id}/subscribe`, { token: client });
     assert.equal(again.body.payment.id, r.body.payment.id);
 
     // O Pagar.me confirma; ao voltar, o cliente sincroniza e o plano passa a valer.
@@ -122,45 +122,49 @@ describe('o cliente escolhe o plano', () => {
     payOrder(orderId);
     const sync = await call('POST', `/payments/${r.body.payment.id}/sync`, { token: client });
     assert.equal(sync.body.payment.status, 'paid');
-    assert.equal(await myPlan(), 'Flex');
+    assert.equal(await myPlan(), 'Plano Raiz');
     assert.equal((await call('GET', '/me/plans', { token: client })).body.pending_plan_id, null);
   });
 
   it('a mensalidade paga entra no Financeiro e o mês não é cobrado de novo', async () => {
-    const rec = await db.query("SELECT * FROM receivables WHERE description LIKE 'Mensalidade Flex%'");
+    const rec = await db.query("SELECT * FROM receivables WHERE description LIKE 'Mensalidade Plano Raiz%'");
     assert.equal(rec.length, 1);
     assert.equal(rec[0].status, 'paid');
-    assert.equal(Number(rec[0].amount_cents), 34900);
+    assert.equal(Number(rec[0].amount_cents), 14400);
     const fees = await generatePlanFees(month, await getSettings());
     assert.equal(fees.created, 0);
-    assert.equal((await db.query("SELECT id FROM receivables WHERE description LIKE 'Mensalidade Flex%'")).length, 1);
+    assert.equal((await db.query("SELECT id FROM receivables WHERE description LIKE 'Mensalidade Plano Raiz%'")).length, 1);
   });
 
   it('já ter o plano escolhido é recusado; plano sem mensalidade vale na hora', async () => {
-    assert.equal((await call('POST', `/me/plans/${planByName('Flex').id}/subscribe`, { token: client })).status, 409);
-    const free = await call('POST', `/me/plans/${planByName('Avulso').id}/subscribe`, { token: client });
+    assert.equal((await call('POST', `/me/plans/${planByName('Plano Raiz').id}/subscribe`, { token: client })).status, 409);
+    const free = await call('POST', `/me/plans/${planByName('Modo Brisa').id}/subscribe`, { token: client });
     assert.equal(free.status, 201);
     assert.equal(free.body.activated, true);
-    assert.equal(await myPlan(), 'Avulso');
+    assert.equal(await myPlan(), 'Modo Brisa');
   });
 
   it('trocar de ideia antes de pagar descarta a cobrança anterior; plano inativo some', async () => {
-    const dayPass = planByName('Day Pass');
-    const first = await call('POST', `/me/plans/${dayPass.id}/subscribe`, { token: client });
+    // Planos pagos extras, criados pela administração só para este teste.
+    const mk = async (name, price_cents) => (await call('POST', '/admin/plans', { token: admin, body: { name, price_cents } })).body.plan;
+    const pequeno = await mk('Plano Pequeno', 5000);
+    const grande = await mk('Plano Grande', 90000);
+
+    const first = await call('POST', `/me/plans/${pequeno.id}/subscribe`, { token: client });
     assert.equal(first.status, 201);
-    const second = await call('POST', `/me/plans/${planByName('Sala Privativa').id}/subscribe`, { token: client });
+    const second = await call('POST', `/me/plans/${grande.id}/subscribe`, { token: client });
     assert.equal(second.status, 201);
     const pending = await db.query("SELECT plan_id FROM receivables WHERE user_id IS NOT NULL AND status = 'pending' AND plan_id IS NOT NULL");
-    assert.deepEqual(pending.map((p) => Number(p.plan_id)), [planByName('Sala Privativa').id]);
+    assert.deepEqual(pending.map((p) => Number(p.plan_id)), [grande.id]);
 
-    await call('PUT', `/admin/plans/${dayPass.id}`, { token: admin, body: { name: 'Day Pass', active: false } });
-    assert.equal((await call('POST', `/me/plans/${dayPass.id}/subscribe`, { token: client })).status, 404);
+    await call('PUT', `/admin/plans/${pequeno.id}`, { token: admin, body: { name: 'Plano Pequeno', active: false } });
+    assert.equal((await call('POST', `/me/plans/${pequeno.id}/subscribe`, { token: client })).status, 404);
   });
 
   it('baixa manual da mensalidade pela administração também ativa o plano', async () => {
     const rec = await db.get("SELECT id FROM receivables WHERE status = 'pending' AND plan_id IS NOT NULL");
     const r = await call('POST', `/admin/finance/receivables/${rec.id}/pay`, { token: admin, body: { method: 'dinheiro' } });
     assert.equal(r.status, 200);
-    assert.equal(await myPlan(), 'Sala Privativa');
+    assert.equal(await myPlan(), 'Plano Grande');
   });
 });

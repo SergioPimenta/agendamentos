@@ -4,6 +4,7 @@ import express from 'express';
 import { z } from 'zod';
 import { config } from '../config.js';
 import { db } from '../db/index.js';
+import { DEFAULT_PLAN_NAME } from '../db/migrate.js';
 import { signToken, verifyToken } from '../middleware/auth.js';
 import { permissionsFor } from '../services/access.js';
 import { getSettings } from '../services/settings.js';
@@ -65,7 +66,7 @@ router.post(
     const exists = await db.get('SELECT id FROM users WHERE email = ?', [data.email]);
     if (exists) throw new HttpError(409, 'Já existe uma conta com esse e-mail. Tente entrar.');
 
-    const avulso = await db.get("SELECT id FROM plans WHERE name = 'Avulso' AND active = 1");
+    const avulso = await db.get('SELECT id FROM plans WHERE name = ? AND active = 1', [DEFAULT_PLAN_NAME]);
     const r = await db.run(
       `INSERT INTO users (name, email, password, role, phone, company, plan_id, created_at, updated_at)
        VALUES (?, ?, ?, 'client', ?, ?, ?, ?, ?)`,

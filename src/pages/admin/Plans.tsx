@@ -43,7 +43,7 @@ export default function AdminPlans() {
               {!p.active && <Badge tone="mist">Inativo</Badge>}
             </div>
             <p className="mt-1.5 min-h-[40px] text-[13px] leading-snug text-stone">{p.description}</p>
-            <p className="mt-5 font-display text-[28px] leading-none font-medium text-ink">{p.price_cents ? fmtMoney(p.price_cents) : 'Avulso'}{p.price_cents > 0 && <span className="text-[13px] font-normal text-stone">/mês</span>}</p>
+            <p className="mt-5 font-display text-[28px] leading-none font-medium text-ink">{p.price_cents ? fmtMoney(p.price_cents) : 'Sem mensalidade'}{p.price_cents > 0 && <span className="text-[13px] font-normal text-stone">/mês</span>}</p>
             <ul className="mt-5 flex flex-col gap-2 text-[13px] text-stone">
               <li className="flex items-center gap-2">{p.unlimited ? <><InfinityIcon size={15} className="text-sage-700" />Salas ilimitadas</> : p.included_minutes ? <>✓ {fmtDuration(p.included_minutes)} de sala por mês</> : <>• Sem horas incluídas</>}</li>
               {p.room_discount_percent > 0 && <li>✓ {p.room_discount_percent}% off nas horas extras</li>}

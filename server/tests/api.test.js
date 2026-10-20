@@ -89,7 +89,7 @@ describe('disponibilidade e reservas', () => {
     const b = r.body.bookings[0];
     bookingId = b.id;
     assert.equal(b.status, 'confirmed');
-    assert.equal(b.price_cents, 3500); // Sala Brisa: R$ 35/h, plano Avulso
+    assert.equal(b.price_cents, 3500); // Sala Brisa: R$ 35/h, plano Modo Brisa
     assert.equal(b.payment_status, 'pending');
   });
 
@@ -169,8 +169,10 @@ describe('disponibilidade e reservas', () => {
 
 describe('planos e consumo', () => {
   it('desconta horas incluídas do plano Flex antes de cobrar', async () => {
-    const plans = (await call('GET', '/admin/plans', { token: admin })).body.plans;
-    const flex = plans.find((p) => p.name === 'Flex');
+    // Plano criado pela administração: 3h por mês e 10% de desconto nas demais horas.
+    const created = await call('POST', '/admin/plans', { token: admin, body: { name: 'Flex', included_minutes: 180, room_discount_percent: 10, price_cents: 0 } });
+    assert.equal(created.status, 201);
+    const flex = created.body.plan;
     const u = await call('POST', '/admin/users', { token: admin, body: { name: 'Membro Flex', email: 'flex@exemplo.com', password: 'flex-senha-12', plan_id: flex.id } });
     assert.equal(u.status, 201);
     const login = await call('POST', '/auth/login', { body: { email: 'flex@exemplo.com', password: 'flex-senha-12' } });
