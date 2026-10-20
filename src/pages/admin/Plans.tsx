@@ -61,6 +61,7 @@ const blank = {
   name: '', description: '', hours: '0', unlimited: false, discount: 0, price: '0,00', active: true,
   subtitle: '', icon: '' as PlanIconKey | '', price_label: '', price_note: '', featured: false,
   features: [] as string[], tiers: [] as { label: string; benefit: string }[], tiers_note: '',
+  layout: 'card' as Plan['layout'], headline: '', cta_label: '', contact_only: false,
 };
 
 function PlanForm({ open, plan, onClose, onSaved, onDelete }: { open: boolean; plan?: Plan; onClose: () => void; onSaved: () => void; onDelete: (p: Plan) => void }) {
@@ -80,6 +81,7 @@ function PlanForm({ open, plan, onClose, onSaved, onDelete }: { open: boolean; p
         discount: plan.room_discount_percent, price: (plan.price_cents / 100).toFixed(2).replace('.', ','), active: plan.active,
         subtitle: plan.subtitle, icon: plan.icon, price_label: plan.price_label, price_note: plan.price_note, featured: plan.featured,
         features: [...plan.features], tiers: plan.tiers.map((t) => ({ ...t })), tiers_note: plan.tiers_note,
+        layout: plan.layout, headline: plan.headline, cta_label: plan.cta_label, contact_only: plan.contact_only,
       } : blank);
     }
   }
@@ -101,6 +103,7 @@ function PlanForm({ open, plan, onClose, onSaved, onDelete }: { open: boolean; p
         features: f.features.map((x) => x.trim()).filter(Boolean),
         tiers: f.tiers.map((t) => ({ label: t.label.trim(), benefit: t.benefit.trim() })).filter((t) => t.label && t.benefit),
         tiers_note: f.tiers_note,
+        layout: f.layout, headline: f.headline, cta_label: f.cta_label, contact_only: f.contact_only,
       };
       if (plan) await api.put(`/admin/plans/${plan.id}`, body);
       else await api.post('/admin/plans', body);
@@ -158,6 +161,27 @@ function PlanForm({ open, plan, onClose, onSaved, onDelete }: { open: boolean; p
           <Input label="Preço em destaque" maxLength={80} value={f.price_label} onChange={(e) => setF({ ...f, price_label: e.target.value })} hint="Ex.: R$ 144,00 ou Usa primeiro. Vazio mostra a mensalidade abaixo." />
           <Input label="Texto ao lado do preço" maxLength={120} value={f.price_note} onChange={(e) => setF({ ...f, price_note: e.target.value })} hint="Ex.: /mês (a hora sai por R$ 36,00)" />
           <div className="sm:col-span-2"><Switch checked={f.featured} onChange={(v) => setF({ ...f, featured: v })} label="Plano em destaque" description="O cartão fica em verde escuro, chamando mais atenção." /></div>
+          <div className="flex flex-col gap-1.5 sm:col-span-2">
+            <span className="text-[12px] font-semibold tracking-wide text-ink">Formato</span>
+            <div role="radiogroup" aria-label="Formato do plano" className="inline-flex w-fit rounded-full border border-ink/10 bg-cream p-1">
+              {([['card', 'Cartão'], ['banner', 'Faixa larga']] as const).map(([v, label]) => (
+                <button
+                  key={v}
+                  type="button"
+                  role="radio"
+                  aria-checked={f.layout === v}
+                  onClick={() => setF({ ...f, layout: v })}
+                  className={cn('rounded-full px-4 py-2 text-[13px] font-semibold transition-colors', f.layout === v ? 'bg-sage-700 text-cream' : 'text-stone hover:text-ink')}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="text-[12px] text-stone-light">Faixa larga ocupa a linha inteira, com título grande, como o Endereço Comercial.</p>
+          </div>
+          {f.layout === 'banner' && <Input containerClassName="sm:col-span-2" label="Título grande da faixa" maxLength={160} value={f.headline} onChange={(e) => setF({ ...f, headline: e.target.value })} hint="Ex.: Nosso Endereço Comercial Premium. Vazio usa o nome do plano." />}
+          <Input label="Texto do botão" maxLength={80} value={f.cta_label} onChange={(e) => setF({ ...f, cta_label: e.target.value })} hint="Ex.: Contratar Endereço Comercial" />
+          <div className="flex items-center"><Switch checked={f.contact_only} onChange={(v) => setF({ ...f, contact_only: v })} label="Contratação pelo WhatsApp" description="O botão abre o WhatsApp do espaço, sem assinatura nem pagamento online." /></div>
         </section>
 
         <section className="flex flex-col gap-3">

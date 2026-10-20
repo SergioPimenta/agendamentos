@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Check, ShieldCheck } from 'lucide-react';
+import { Check, MessageCircle, ShieldCheck } from 'lucide-react';
 import { PlanCard } from '../../components/plans/PlanCard';
-import { Button } from '../../components/ui/Button';
+import { Button, buttonClass } from '../../components/ui/Button';
 import { Badge, ErrorState, Skeleton, useConfirm, useToast } from '../../components/ui/Feedback';
 import { useAuth } from '../../contexts/AuthContext';
 import { useApi } from '../../hooks/useApi';
@@ -79,13 +79,23 @@ export default function PlansPage() {
           const paid = p.price_cents > 0;
           const blocked = paid && !d.online_payments;
           const label = current ? 'Plano atual' : blocked ? 'Fale com a recepção' : paid ? (pending ? 'Continuar pagamento' : `Assinar · ${fmtMoney(p.price_cents)}`) : 'Mudar para este plano';
+          // Plano contratado pela recepção: o botão abre o WhatsApp do espaço com a mensagem pronta.
+          const whatsapp = settings?.business_whatsapp?.replace(/\D/g, '');
+          const contactHref = whatsapp ? `https://wa.me/${whatsapp}?text=${encodeURIComponent(`Olá! Quero contratar o plano ${p.name}.`)}` : undefined;
+          const contactButton = contactHref
+            ? (
+              <a href={contactHref} target="_blank" rel="noopener noreferrer" className={buttonClass('primary', 'lg', 'no-underline')}>
+                <MessageCircle size={17} />{p.cta_label || 'Falar com a recepção'}
+              </a>
+            )
+            : <Button size="lg" disabled>{p.cta_label || 'Fale com a recepção'}</Button>;
           return (
             <PlanCard
               key={p.id}
               plan={p}
               className={current && !p.featured ? 'border-sage-700 ring-2 ring-sage-700/15' : undefined}
               badges={current ? <Badge tone={p.featured ? 'mist' : 'sage'}><Check size={12} />Seu plano</Badge> : pending ? <Badge tone="amber">Aguardando pagamento</Badge> : null}
-              footer={
+              footer={p.contact_only && !current ? contactButton : (
                 <Button
                   className="w-full"
                   variant={p.featured ? (current ? 'outline-light' : 'light') : current ? 'secondary' : 'primary'}
@@ -95,7 +105,7 @@ export default function PlansPage() {
                 >
                   {label}
                 </Button>
-              }
+              )}
             />
           );
         })}

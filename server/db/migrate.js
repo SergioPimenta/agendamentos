@@ -270,6 +270,16 @@ const migrations = [
       `ALTER TABLE plans ADD COLUMN tiers_note VARCHAR(255) NOT NULL DEFAULT ''`,
     ],
   },
+  {
+    // Plano em faixa larga (ex.: Endereço Comercial) e contratação por WhatsApp em vez de pagamento online.
+    id: '012_plan_banner',
+    statements: () => [
+      `ALTER TABLE plans ADD COLUMN layout VARCHAR(10) NOT NULL DEFAULT 'card'`,
+      `ALTER TABLE plans ADD COLUMN headline VARCHAR(160) NOT NULL DEFAULT ''`,
+      `ALTER TABLE plans ADD COLUMN cta_label VARCHAR(80) NOT NULL DEFAULT ''`,
+      `ALTER TABLE plans ADD COLUMN contact_only INT NOT NULL DEFAULT 0`,
+    ],
+  },
 ];
 
 export async function migrate() {
@@ -406,6 +416,46 @@ async function fillPlanShowcase() {
   await db.run("INSERT INTO settings (k, v) VALUES ('plans_showcase', 'v1')");
 }
 
+/** Plano de escritório virtual, mostrado em faixa larga e contratado pelo WhatsApp. Criado uma vez por banco. */
+const ADDRESS_PLAN = {
+  name: 'Endereço Comercial',
+  description: 'Use o endereço nobre do Edifício Hannover no seu site, cartão de visitas e Instagram, mantendo sua casa protegida. Inclui gestão profissional de correspondências para prestadores de serviços em áreas correlatas à saúde e bem-estar integrativo.',
+  included_minutes: 0,
+  unlimited: 0,
+  room_discount_percent: 10, // "10% de desconto fixo em todas as sublocações de salas físicas"
+  price_cents: 8700,
+  sort_order: 3,
+  subtitle: 'Escritório virtual',
+  icon: 'building',
+  price_label: 'R$ 87,00',
+  price_note: '/mês',
+  featured: 0,
+  features: [
+    'Contrato mínimo de 6 meses.',
+    'R$ 939,60/ano (equivale a R$ 78,30/mês, 10% off à vista)',
+    'Clientes do Endereço Comercial têm 10% de desconto fixo em todas as sublocações de salas físicas.',
+  ],
+  layout: 'banner',
+  headline: 'Nosso Endereço Comercial Premium.',
+  cta_label: 'Contratar Endereço Comercial',
+  contact_only: 1,
+};
+
+async function addAddressPlan() {
+  if (await db.get("SELECT k FROM settings WHERE k = 'plans_address'")) return;
+  const p = ADDRESS_PLAN;
+  if (!(await db.get('SELECT id FROM plans WHERE name = ?', [p.name]))) {
+    await db.run(
+      `INSERT INTO plans (name, description, included_minutes, unlimited, room_discount_percent, price_cents, sort_order,
+                          subtitle, icon, price_label, price_note, featured, features, tiers, tiers_note, layout, headline, cta_label, contact_only)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', '', ?, ?, ?, ?)`,
+      [p.name, p.description, p.included_minutes, p.unlimited, p.room_discount_percent, p.price_cents, p.sort_order,
+        p.subtitle, p.icon, p.price_label, p.price_note, p.featured, JSON.stringify(p.features), p.layout, p.headline, p.cta_label, p.contact_only],
+    );
+  }
+  await db.run("INSERT INTO settings (k, v) VALUES ('plans_address', 'v1')");
+}
+
 /** Planos da primeira versão do sistema, substituídos pelo catálogo atual (ver `swapPlanCatalog`). */
 const LEGACY_PLAN_NAMES = ['Avulso', 'Day Pass', 'Flex', 'Sala Privativa'];
 
@@ -459,6 +509,7 @@ export async function seed() {
 
   await swapPlanCatalog();
   await fillPlanShowcase();
+  await addAddressPlan();
 
   const roomCount = await db.get('SELECT COUNT(*) AS n FROM rooms');
   if (!Number(roomCount.n)) {

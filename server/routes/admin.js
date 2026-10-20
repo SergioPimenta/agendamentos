@@ -11,7 +11,7 @@ import { requireAdmin, requireModule, verifyToken } from '../middleware/auth.js'
 import { LEVELS, MODULES, canEnterPanel, fullAccess, hasAccess, normalizePermissions } from '../services/access.js';
 import { CONSUMING, OCCUPYING, getBusinessHours, inList } from '../services/availability.js';
 import { birthdaysOfMonth } from '../services/birthdays.js';
-import { PLAN_ICONS, presentShowcase } from '../services/plans.js';
+import { PLAN_ICONS, PLAN_LAYOUTS, presentShowcase } from '../services/plans.js';
 import {
   BOOKING_SELECT,
   changeStatus,
@@ -738,9 +738,16 @@ const planInput = z.object({
   features: z.array(z.string().trim().min(1).max(200)).max(12).optional().default([]),
   tiers: z.array(z.object({ label: z.string().trim().min(1).max(80), benefit: z.string().trim().min(1).max(80) })).max(8).optional().default([]),
   tiers_note: z.string().trim().max(255).optional().default(''),
+  layout: z.enum(PLAN_LAYOUTS).optional().default('card'),
+  headline: z.string().trim().max(160).optional().default(''),
+  cta_label: z.string().trim().max(80).optional().default(''),
+  contact_only: z.boolean().optional().default(false),
 });
 
-const showcaseValues = (d) => [d.subtitle, d.icon, d.price_label, d.price_note, d.featured ? 1 : 0, JSON.stringify(d.features), JSON.stringify(d.tiers), d.tiers_note];
+const showcaseValues = (d) => [
+  d.subtitle, d.icon, d.price_label, d.price_note, d.featured ? 1 : 0, JSON.stringify(d.features), JSON.stringify(d.tiers), d.tiers_note,
+  d.layout, d.headline, d.cta_label, d.contact_only ? 1 : 0,
+];
 
 const presentPlan = (p) => ({
   ...presentShowcase(p),
@@ -770,8 +777,8 @@ router.post(
     const d = parse(planInput, req.body);
     const r = await db.run(
       `INSERT INTO plans (name, description, included_minutes, unlimited, room_discount_percent, price_cents, active, sort_order,
-                          subtitle, icon, price_label, price_note, featured, features, tiers, tiers_note)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                          subtitle, icon, price_label, price_note, featured, features, tiers, tiers_note, layout, headline, cta_label, contact_only)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [d.name, d.description, d.included_minutes, d.unlimited ? 1 : 0, d.room_discount_percent, d.price_cents, d.active ? 1 : 0, d.sort_order, ...showcaseValues(d)],
     );
     res.status(201).json({ plan: presentPlan(await db.get('SELECT * FROM plans WHERE id = ?', [r.insertId])) });
@@ -786,7 +793,8 @@ router.put(
     const d = parse(planInput, req.body);
     await db.run(
       `UPDATE plans SET name = ?, description = ?, included_minutes = ?, unlimited = ?, room_discount_percent = ?, price_cents = ?, active = ?, sort_order = ?,
-              subtitle = ?, icon = ?, price_label = ?, price_note = ?, featured = ?, features = ?, tiers = ?, tiers_note = ? WHERE id = ?`,
+              subtitle = ?, icon = ?, price_label = ?, price_note = ?, featured = ?, features = ?, tiers = ?, tiers_note = ?,
+              layout = ?, headline = ?, cta_label = ?, contact_only = ? WHERE id = ?`,
       [d.name, d.description, d.included_minutes, d.unlimited ? 1 : 0, d.room_discount_percent, d.price_cents, d.active ? 1 : 0, d.sort_order, ...showcaseValues(d), pid],
     );
     res.json({ plan: presentPlan(await db.get('SELECT * FROM plans WHERE id = ?', [pid])) });

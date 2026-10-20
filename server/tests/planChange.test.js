@@ -84,7 +84,7 @@ describe('o cliente escolhe o plano', () => {
     const r = await call('GET', '/me/plans', { token: client });
     assert.equal(r.status, 200);
     plans = r.body.plans;
-    assert.deepEqual(plans.map((p) => p.name), ['Modo Brisa', 'Plano Raiz', 'Plano Ecossistema']);
+    assert.deepEqual(plans.map((p) => p.name), ['Modo Brisa', 'Plano Raiz', 'Plano Ecossistema', 'Endereço Comercial']);
     assert.equal(planByName('Plano Raiz').price_cents, 14400);
     assert.equal(r.body.current_plan_id, planByName('Modo Brisa').id); // cadastro novo começa no Modo Brisa
     assert.equal(r.body.pending_plan_id, null);
@@ -180,6 +180,32 @@ describe('o cliente escolhe o plano', () => {
     const bad = (extra) => call('PUT', `/admin/plans/${eco.id}`, { token: admin, body: { name: eco.name, ...extra } });
     assert.equal((await bad({ icon: 'foguete' })).status, 400);
     assert.equal((await bad({ features: [''] })).status, 400);
+  });
+
+  it('Endereço Comercial: plano em faixa larga, com 10% de desconto, contratado pelo WhatsApp', async () => {
+    const end = planByName('Endereço Comercial');
+    assert.equal(end.layout, 'banner');
+    assert.equal(end.headline, 'Nosso Endereço Comercial Premium.');
+    assert.equal(end.cta_label, 'Contratar Endereço Comercial');
+    assert.equal(end.contact_only, true);
+    assert.equal(end.price_cents, 8700);
+    assert.equal(end.price_label, 'R$ 87,00');
+    assert.equal(end.room_discount_percent, 10);
+    assert.equal(end.features.length, 3);
+    assert.equal(planByName('Plano Raiz').layout, 'card');
+
+    // Não dá para assinar pela tela: a contratação é com a recepção.
+    const r = await call('POST', `/me/plans/${end.id}/subscribe`, { token: client });
+    assert.equal(r.status, 422);
+    assert.match(r.body.message, /WhatsApp/);
+
+    // A administração liga e desliga as opções; layout inválido é recusado.
+    const put = (extra) => call('PUT', `/admin/plans/${end.id}`, { token: admin, body: { name: end.name, ...extra } });
+    const off = await put({ layout: 'card', contact_only: false, headline: '', cta_label: '' });
+    assert.equal(off.body.plan.layout, 'card');
+    assert.equal(off.body.plan.contact_only, false);
+    assert.equal((await put({ layout: 'faixa' })).status, 400);
+    await put({ layout: 'banner', contact_only: true, headline: end.headline, cta_label: end.cta_label });
   });
 
   it('trocar de ideia antes de pagar descarta a cobrança anterior; plano inativo some', async () => {

@@ -12,7 +12,8 @@ import { getSettings, onlinePaymentsReady } from './settings.js';
  */
 
 /** Ícones que a administração pode escolher para o cartão do plano. */
-export const PLAN_ICONS = ['leaf', 'sprout', 'tree', 'flower', 'sun', 'mountain'];
+export const PLAN_ICONS = ['leaf', 'sprout', 'tree', 'flower', 'sun', 'mountain', 'building'];
+export const PLAN_LAYOUTS = ['card', 'banner'];
 
 const jsonList = (s) => {
   try {
@@ -33,6 +34,10 @@ export const presentShowcase = (p) => ({
   features: jsonList(p.features),
   tiers: jsonList(p.tiers),
   tiers_note: p.tiers_note ?? '',
+  layout: PLAN_LAYOUTS.includes(p.layout) ? p.layout : 'card',
+  headline: p.headline ?? '',
+  cta_label: p.cta_label ?? '',
+  contact_only: Boolean(Number(p.contact_only ?? 0)),
 });
 
 const presentPlan = (p) => ({
@@ -68,6 +73,7 @@ export async function subscribeToPlan({ actor, planId }) {
   if (!plan) throw new HttpError(404, 'Plano não encontrado.');
   const user = await db.get('SELECT id, plan_id FROM users WHERE id = ? AND active = 1', [actor.id]);
   if (user.plan_id != null && Number(user.plan_id) === Number(plan.id)) throw new HttpError(409, 'Este já é o seu plano.');
+  if (Number(plan.contact_only)) throw new HttpError(422, 'Este plano é contratado com a recepção. Fale com a gente pelo WhatsApp.');
 
   // Qualquer troca anterior que ficou sem pagar perde o sentido ao escolher outro plano.
   await db.run("DELETE FROM receivables WHERE user_id = ? AND status = 'pending' AND plan_id IS NOT NULL AND plan_id <> ?", [actor.id, plan.id]);

@@ -1,7 +1,7 @@
 export type Role = 'admin' | 'client';
 
 /** Ícones disponíveis para o cartão do plano. */
-export type PlanIconKey = 'leaf' | 'sprout' | 'tree' | 'flower' | 'sun' | 'mountain';
+export type PlanIconKey = 'leaf' | 'sprout' | 'tree' | 'flower' | 'sun' | 'mountain' | 'building';
 
 /** Como o plano aparece para o cliente (editado pela administração em Planos). */
 export interface PlanShowcase {
@@ -15,6 +15,14 @@ export interface PlanShowcase {
   features: string[];
   tiers: { label: string; benefit: string }[];
   tiers_note: string;
+  /** `banner`: faixa larga com título grande, como o Endereço Comercial. */
+  layout: 'card' | 'banner';
+  /** Título grande da faixa (vazio = nome do plano). */
+  headline: string;
+  /** Texto do botão de contratação. */
+  cta_label: string;
+  /** Contratado pelo WhatsApp, sem assinatura nem pagamento online na tela. */
+  contact_only: boolean;
 }
 
 export interface Plan extends PlanShowcase {

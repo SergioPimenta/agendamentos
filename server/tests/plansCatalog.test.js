@@ -17,9 +17,9 @@ describe('catálogo de planos', () => {
   before(async () => { await migrate(); });
   after(() => db.close?.());
 
-  it('instalação nova já nasce com os três planos atuais', async () => {
+  it('instalação nova já nasce com os planos atuais', async () => {
     await seed();
-    assert.deepEqual(await names(), ['Modo Brisa', 'Plano Raiz', 'Plano Ecossistema']);
+    assert.deepEqual(await names(), ['Modo Brisa', 'Plano Raiz', 'Plano Ecossistema', 'Endereço Comercial']);
     const raiz = await db.get("SELECT * FROM plans WHERE name = 'Plano Raiz'");
     assert.equal(Number(raiz.price_cents), 14400);
     assert.equal(Number(raiz.included_minutes), 240);
@@ -46,7 +46,7 @@ describe('catálogo de planos', () => {
     );
 
     await seed();
-    assert.deepEqual(await names(), ['Modo Brisa', 'Plano Raiz', 'Plano Ecossistema', 'Plano da casa']);
+    assert.deepEqual(await names(), ['Modo Brisa', 'Plano Raiz', 'Plano Ecossistema', 'Endereço Comercial', 'Plano da casa']);
     const brisa = await db.get("SELECT id FROM plans WHERE name = 'Modo Brisa'");
     assert.equal(Number((await db.get('SELECT plan_id FROM users WHERE id = ?', [onFlex])).plan_id), Number(brisa.id));
     assert.equal(Number((await db.get('SELECT plan_id FROM users WHERE id = ?', [onCustom])).plan_id), custom);
@@ -56,6 +56,6 @@ describe('catálogo de planos', () => {
     await db.run("UPDATE users SET plan_id = NULL WHERE plan_id = (SELECT id FROM plans WHERE name = 'Plano Ecossistema')");
     await db.run("DELETE FROM plans WHERE name = 'Plano Ecossistema'");
     await seed();
-    assert.deepEqual(await names(), ['Modo Brisa', 'Plano Raiz', 'Plano da casa']);
+    assert.deepEqual(await names(), ['Modo Brisa', 'Plano Raiz', 'Endereço Comercial', 'Plano da casa']);
   });
 });
