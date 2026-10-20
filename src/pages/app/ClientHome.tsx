@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, CalendarCheck, CalendarPlus, DoorOpen, Hourglass, Receipt, Sparkles } from 'lucide-react';
+import { ArrowRight, CalendarCheck, CalendarPlus, DoorOpen, Receipt, Sparkles } from 'lucide-react';
+import { BankCard } from '../../components/plans/BankCard';
 import { BookingDetail } from '../../components/booking/BookingDetail';
 import { BookingFormModal } from '../../components/booking/BookingFormModal';
 import { BookingRow } from '../../components/booking/BookingRow';
@@ -36,7 +37,6 @@ export default function ClientHome() {
   const upcoming = useApi(() => api.get<{ bookings: Booking[] }>('/bookings', { scope: 'upcoming' }), []);
   const usage = useApi(() => api.get<Statement>('/me/usage'), []);
   const bank = useApi(() => api.get<ClientPackages>('/me/packages'), []);
-  const bankMinutes = bank.data?.balance.minutes_available ?? 0;
 
   const list = upcoming.data?.bookings.slice(0, 4) ?? [];
   const u = usage.data;
@@ -92,6 +92,8 @@ export default function ClientHome() {
         ))}
       </div>
 
+      {bank.data && <BankCard id="banco-home" balance={bank.data.balance} limit={3} linkTo="/app/planos" className="animate-fade-up mb-6" />}
+
       <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <Card>
           <CardHeader title="Próximas reservas" action={list.length > 0 && <Link to="/app/reservas" className="text-[13px] font-semibold text-sage-700 no-underline hover:underline">Ver todas</Link>} />
@@ -127,13 +129,6 @@ export default function ClientHome() {
                 </div>
               ) : (
                 <p className="text-[13.5px] leading-relaxed text-stone">Você paga apenas pelas horas que usar. <Link to="/app/planos" className="font-semibold text-sage-700">Conheça os planos</Link> com horas incluídas.</p>
-              )}
-
-              {bankMinutes > 0 && (
-                <Link to="/app/planos" className="flex items-center justify-between gap-3 rounded-2xl bg-sage-dim px-4 py-3 text-[13.5px] text-sage-800 no-underline transition-colors hover:bg-sage/25">
-                  <span className="flex items-center gap-2.5"><Hourglass size={18} className="text-sage-700" />Banco de horas: <strong className="font-semibold">{fmtDuration(bankMinutes)}</strong></span>
-                  <span className="text-[12.5px] font-semibold">Ver detalhes →</span>
-                </Link>
               )}
 
               <div className="grid grid-cols-2 gap-3 border-t border-ink/8 pt-4">

@@ -9,7 +9,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useApi } from '../../hooks/useApi';
 import { addMonths, fmtDateShort, fmtDuration, fmtMoney, fmtMonth, todayStr } from '../../lib/format';
 import { api } from '../../services/api';
-import type { Booking, OnlinePayment, Statement } from '../../types';
+import { BankCard } from '../../components/plans/BankCard';
+import type { Booking, ClientPackages, OnlinePayment, Statement } from '../../types';
 
 interface StatementRow { month: string; bookings: number; minutes: number; amount_cents: number; paid_cents: number }
 
@@ -18,6 +19,7 @@ export default function Usage() {
   const [selected, setSelected] = useState<Booking | null>(null);
   const usage = useApi(() => api.get<Statement>('/me/usage', { month }), [month]);
   const history = useApi(() => api.get<{ statements: StatementRow[] }>('/me/statements'), []);
+  const bank = useApi(() => api.get<ClientPackages>('/me/packages'), []);
   const u = usage.data;
   const toast = useToast();
   const { settings } = useAuth();
@@ -36,6 +38,7 @@ export default function Usage() {
         else toast.info('Recebemos o seu retorno. Pix e boleto podem levar alguns minutos para confirmar; avisaremos por e-mail.');
         usage.reload();
         history.reload();
+        bank.reload();
       })
       .catch(() => toast.info('Não conseguimos confirmar agora. Se você já pagou, a baixa acontece sozinha em instantes.'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -63,6 +66,8 @@ export default function Usage() {
       </div>
 
       {usage.error && <ErrorState message={usage.error} onRetry={usage.refetch} />}
+
+      {bank.data && <BankCard id="banco-consumo" balance={bank.data.balance} linkTo="/app/planos" className="mb-6" />}
 
       {!u ? (
         <div className="grid gap-4 sm:grid-cols-3">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-[130px] rounded-[22px]" />)}</div>

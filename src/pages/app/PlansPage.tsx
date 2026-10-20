@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Check, Hourglass, MessageCircle, ShieldCheck } from 'lucide-react';
-import { BankLots } from '../../components/plans/BankLots';
+import { Check, MessageCircle, ShieldCheck } from 'lucide-react';
+import { BankCard } from '../../components/plans/BankCard';
 import { PackageCard } from '../../components/plans/PackageCard';
 import { PlanCard } from '../../components/plans/PlanCard';
 import { Button, buttonClass } from '../../components/ui/Button';
 import { Badge, ErrorState, Skeleton, useConfirm, useToast } from '../../components/ui/Feedback';
 import { useAuth } from '../../contexts/AuthContext';
 import { useApi } from '../../hooks/useApi';
-import { fmtDuration, fmtMoney, todayStr } from '../../lib/format';
+import { fmtMoney } from '../../lib/format';
 import { api } from '../../services/api';
 import { PageHeader } from '../../components/ui/Misc';
 import type { ClientPackages, ClientPlan, ClientPlans, HourPackage, OnlinePayment, User } from '../../types';
@@ -91,31 +91,7 @@ export default function PlansPage() {
 
       {q.error && <ErrorState message={q.error} onRetry={q.refetch} />}
 
-      {pk.data && (
-        <section className="mb-10 rounded-[24px] border border-sage-700/25 bg-cream p-6 sm:p-8" aria-labelledby="banco-titulo">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sage-dim text-sage-700"><Hourglass size={22} /></span>
-            <div className="flex-1">
-              <h2 id="banco-titulo" className="font-display text-[22px] leading-tight font-medium text-ink">Seu banco de horas</h2>
-              <p className="mt-0.5 text-[13.5px] text-stone">Horas guardadas para usar em qualquer sala. São descontadas sozinhas nas suas reservas.</p>
-            </div>
-            <div className="text-right">
-              <p className="font-display text-[30px] leading-none font-medium text-ink">{fmtDuration(pk.data.balance.minutes_available)}</p>
-              <p className="mt-1 text-[11.5px] tracking-[0.1em] text-stone uppercase">disponíveis</p>
-            </div>
-          </div>
-          {pk.data.balance.lots.length > 0 ? (
-            <div className="mt-5 border-t border-ink/8 pt-5">
-              <p className="mb-3 text-[11.5px] font-semibold tracking-[0.12em] text-stone uppercase">De onde vem o seu saldo</p>
-              <BankLots lots={pk.data.balance.lots} today={todayStr()} />
-            </div>
-          ) : (
-            <p className="mt-4 text-[13.5px] leading-relaxed text-stone">
-              Seu banco está vazio. As horas de uma reserva paga que você cancelar e os pacotes que comprar aparecem aqui.
-            </p>
-          )}
-        </section>
-      )}
+      {pk.data && <BankCard id="banco-titulo" balance={pk.data.balance} className="mb-10" />}
 
       <div className="grid items-stretch gap-5 md:grid-cols-2 xl:grid-cols-3">
         {!d ? [0, 1, 2].map((i) => <Skeleton key={i} className="h-[520px] rounded-[24px]" />) : d.plans.map((p) => {
