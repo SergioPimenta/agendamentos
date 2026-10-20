@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -49,6 +50,9 @@ export const config = {
     apiUrl: (process.env.PAGARME_API_URL || 'https://api.pagar.me/core/v5').replace(/\/$/, ''),
     webhookToken: process.env.PAGARME_WEBHOOK_TOKEN || '',
   },
-  uploadsDir: path.join(__dirname, 'uploads'),
+  // Segredo do Vercel Cron (header Authorization: Bearer ...) para a rotina de limpeza em /api/cron/sweep.
+  cronSecret: process.env.CRON_SECRET || '',
+  // Na Vercel o disco do projeto é somente leitura; /tmp aceita escrita, mas some entre execuções.
+  uploadsDir: process.env.VERCEL ? path.join(os.tmpdir(), 'uploads') : path.join(__dirname, 'uploads'),
   distDir: path.join(__dirname, '..', 'dist'),
 };

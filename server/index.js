@@ -12,7 +12,7 @@ import financeRoutes from './routes/finance.js';
 import webhookRoutes from './routes/webhooks.js';
 import { releaseExpiredHolds } from './services/bookings.js';
 import { autoCloseSessions } from './services/sessions.js';
-import { errorHandler } from './utils/http.js';
+import { asyncHandler, errorHandler } from './utils/http.js';
 
 export async function createApp() {
   await migrate();
@@ -41,6 +41,15 @@ export async function createApp() {
   app.use(cors({ origin: config.isProd ? false : true }));
   app.use(express.json({ limit: '200kb' }));
 
+  // Rotina de limpeza para hospedagem sem processo fixo (Vercel Cron). Local/servidor próprio usa os setInterval abaixo.
+  app.get('/api/cron/sweep', asyncHandler(async (req, res) => {
+    if (!config.cronSecret || req.get('authorization') !== `Bearer ${config.cronSecret}`) {
+      return res.status(401).json({ message: 'Não autorizado.' });
+    }
+    await releaseExpiredHolds();
+    await autoCloseSessions();
+    res.json({ ok: true });
+  }));
   app.use('/api/auth', authRoutes);
   app.use('/api/webhooks', webhookRoutes);
   app.use('/api/admin/finance', financeRoutes);
