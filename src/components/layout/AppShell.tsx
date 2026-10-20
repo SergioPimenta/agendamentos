@@ -8,6 +8,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { cn } from '../../lib/cn';
 import { BrandLogo } from '../brand/brand';
 import { CanopyMotif } from '../brand/harmonizeUi';
+import { InstallAppButton } from '../pwa/InstallApp';
 import { Avatar } from '../ui/Misc';
 
 interface NavItem { to: string; label: string; icon: ReactNode; end?: boolean }
@@ -99,6 +100,7 @@ export function AppShell({ variant }: { variant: 'client' | 'admin' }) {
             {variant === 'admin' ? 'Ver área do cliente' : 'Voltar à administração'}
           </NavLink>
         )}
+        <InstallAppButton variant="outline-light" className="mb-3 w-full" />
         <div className="flex items-center gap-3 rounded-2xl bg-cream/8 p-3">
           <Avatar name={user?.name ?? ''} size={38} className="bg-sage-light text-sage-900" />
           <div className="min-w-0 flex-1">

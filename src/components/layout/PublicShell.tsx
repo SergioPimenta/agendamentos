@@ -3,6 +3,7 @@ import { Mail, MapPin, MessageCircle, Phone } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { cn } from '../../lib/cn';
 import { BrandLogo } from '../brand/brand';
+import { InstallAppButton } from '../pwa/InstallApp';
 import { buttonClass } from '../ui/Button';
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
@@ -23,6 +24,7 @@ export function PublicShell() {
             <NavLink to="/reservar" className={linkClass}>Horários</NavLink>
           </nav>
           <div className="flex items-center gap-2">
+            <InstallAppButton variant="soft" />
             <Link to="/login" className={buttonClass('ghost', 'sm')}>Entrar</Link>
             {settings?.allow_signup !== false && <Link to="/cadastro" className={buttonClass('primary', 'sm')}>Criar conta</Link>}
           </div>
@@ -48,6 +50,7 @@ export function PublicShell() {
             {whats && <li><a href={`https://wa.me/${whats}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2.5 text-cream/75 no-underline hover:text-cream"><MessageCircle size={16} className="text-sage-light" />Falar no WhatsApp</a></li>}
             <li><Link to="/reservar" className="text-cream/75 no-underline hover:text-cream">Ver horários disponíveis</Link></li>
             <li><Link to="/login" className="text-cream/75 no-underline hover:text-cream">Já sou cliente · Entrar</Link></li>
+            <li><InstallAppButton variant="outline-light" label="Baixar o app no celular" /></li>
           </ul>
         </div>
       </footer>

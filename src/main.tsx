@@ -19,3 +19,10 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     </BrowserRouter>
   </React.StrictMode>,
 );
+
+// App instalável (PWA): o service worker só vale em produção (em dev atrapalharia o hot reload).
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((err) => console.warn('[pwa] service worker não registrado:', err));
+  });
+}
