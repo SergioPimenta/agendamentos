@@ -106,7 +106,7 @@ export async function computePricing(conn, { user, room, date, minutes, excludeI
   }
 
   // Depois das horas do plano, o saldo de pacotes comprados cobre o que sobrar (da compra que vence primeiro).
-  const pkg = await planPackageUse(conn, { userId: user.id, date, minutes: minutes - included, excludeId });
+  const pkg = await planPackageUse(conn, { userId: user.id, date, minutes: minutes - included, excludeId, roomId: room.id });
 
   const payable = minutes - included - pkg.used;
   const discount = plan ? Number(plan.room_discount_percent) : 0;

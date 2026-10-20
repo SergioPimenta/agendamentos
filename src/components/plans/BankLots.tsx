@@ -56,6 +56,7 @@ export function BankLots({ lots, today, action, className }: { lots: PackageLot[
           <div className="min-w-0 flex-1 basis-[220px]">
             <div className="flex flex-wrap items-center gap-2"><SourceBadge source={l.source} /><span className="text-[13.5px] font-semibold text-ink">{l.name}</span></div>
             <p className="mt-1 text-[12.5px] leading-snug text-stone">{lotDetail(l)}</p>
+            <p className="mt-0.5 text-[12px] leading-snug text-stone-light">{l.rooms.length > 0 ? `Vale só em: ${l.rooms.join(', ')}` : 'Vale em qualquer sala'}</p>
           </div>
           <div className="text-right">
             <p className="text-[14px] font-semibold text-ink">{fmtDuration(l.remaining)}{l.remaining !== l.minutes_total && <span className="font-normal text-stone-light"> de {fmtDuration(l.minutes_total)}</span>}</p>

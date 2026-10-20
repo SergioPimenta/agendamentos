@@ -229,6 +229,50 @@ describe('pacotes de horas', () => {
     assert.equal((await call('POST', '/admin/packages/grant', { token: admin, body: { user_id: 999999, package_id: pkg.id } })).status, 404);
   });
 
+  it('o pacote pode valer só em algumas salas; o saldo só cobre reservas nelas', async () => {
+    await db.run('DELETE FROM package_usage');
+    await db.run('DELETE FROM package_purchases');
+    const rooms = (await call('GET', '/admin/rooms', { token: admin })).body.rooms;
+    const brisa = rooms.find((r) => r.name === 'Sala Brisa');
+    const other = rooms.find((r) => r.id !== brisa.id && r.id !== room.id); // outra sala, fora do pacote
+    const body = { name: 'Pacote Brisa', minutes: 120, price_cents: 6000, validity_days: 30, room_ids: [brisa.id, room.id] };
+
+    // Sala que não existe é recusada; sem salas = vale em todas.
+    assert.equal((await call('POST', '/admin/packages', { token: admin, body: { ...body, room_ids: [999999] } })).status, 400);
+    const open = (await call('POST', '/admin/packages', { token: admin, body: { ...body, name: 'Pacote livre', room_ids: [] } })).body.package;
+    assert.deepEqual(open.room_ids, []);
+    assert.deepEqual(open.rooms, []);
+
+    const created = await call('POST', '/admin/packages', { token: admin, body });
+    assert.equal(created.status, 201);
+    const pkg2 = created.body.package;
+    assert.deepEqual(pkg2.room_ids.sort(), [brisa.id, room.id].sort());
+    assert.deepEqual(pkg2.rooms.sort(), [brisa.name, room.name].sort());
+    assert.deepEqual((await call('GET', '/me/packages', { token: client })).body.packages.find((p) => p.id === pkg2.id).rooms.sort(), [brisa.name, room.name].sort());
+
+    await call('POST', '/admin/packages/grant', { token: admin, body: { user_id: clientId, package_id: pkg2.id } });
+    const lot = (await call('GET', '/me/packages', { token: client })).body.balance.lots[0];
+    assert.deepEqual(lot.rooms.sort(), [brisa.name, room.name].sort()); // o cliente vê onde o lote vale
+
+    const date = weekday(14);
+    const quote = (roomId) => call('POST', '/bookings/quote', { token: client, body: { room_id: roomId, date, start_time: '09:00', end_time: '10:00' } });
+    assert.equal((await quote(room.id)).body.package_minutes, 60); // sala do pacote: coberta
+    assert.equal((await quote(other.id)).body.package_minutes, 0); // fora do pacote: paga
+    assert.ok((await quote(other.id)).body.price_cents > 0);
+
+    // Mudar as salas do pacote depois não altera o que o cliente já comprou.
+    await call('PUT', `/admin/packages/${pkg2.id}`, { token: admin, body: { ...body, room_ids: [other.id] } });
+    assert.equal((await quote(room.id)).body.package_minutes, 60);
+    assert.equal((await quote(other.id)).body.package_minutes, 0);
+
+    // A administração enxerga a restrição de cada lote no banco de horas.
+    const bankView = (await call('GET', '/admin/hour-bank', { token: admin })).body;
+    assert.deepEqual(bankView.clients[0].lots[0].rooms.sort(), [brisa.name, room.name].sort());
+
+    // O pacote do primeiro teste volta a ter uma venda (o próximo teste confere que ele não pode ser excluído).
+    await call('POST', '/admin/packages/grant', { token: admin, body: { user_id: clientId, package_id: pkg.id } });
+  });
+
   it('pacote já vendido não é excluído, só desativado; baixa manual também credita', async () => {
     assert.equal((await call('DELETE', `/admin/packages/${pkg.id}`, { token: admin })).status, 409);
 

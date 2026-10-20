@@ -414,6 +414,10 @@ export interface HourPackage {
   features: string[];
   active: boolean;
   sort_order: number;
+  /** Salas em que as horas valem (ids); lista vazia = todas as salas. */
+  room_ids: number[];
+  /** Nomes das salas acima (vazio = todas as salas). */
+  rooms: string[];
   /** Quantas vezes já foi vendido (só na administração). */
   sold_count?: number;
 }
@@ -431,6 +435,10 @@ export interface PackageLot {
   expires_at: string | null;
   remaining: number;
   created_at: string;
+  /** Salas em que o lote vale (ids); lista vazia = qualquer sala. */
+  room_ids: number[];
+  /** Nomes das salas acima (vazio = qualquer sala). */
+  rooms: string[];
   /** Reserva que gerou o crédito (só quando a origem é um cancelamento). */
   origin_booking: { code: string; room: string; date: string; start_time: string } | null;
 }

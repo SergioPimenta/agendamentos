@@ -23,7 +23,19 @@ const jsonList = (s) => {
   }
 };
 
-export const presentPackage = (p) => ({
+/** Ids de salas guardados em JSON (lista vazia = vale em todas as salas). */
+const idList = (s) => jsonList(s).map(Number).filter((n) => Number.isInteger(n) && n > 0);
+
+/** Mapa id → nome das salas, para mostrar onde cada pacote/lote vale. */
+export async function roomNameMap(conn = db) {
+  return new Map((await conn.query('SELECT id, name FROM rooms')).map((r) => [Number(r.id), r.name]));
+}
+
+const roomNamesOf = (ids, names) => (names ? ids.map((id) => names.get(id)).filter(Boolean) : []);
+
+export const presentPackage = (p, names = null) => ({
+  room_ids: idList(p.room_ids),
+  rooms: roomNamesOf(idList(p.room_ids), names),
   id: Number(p.id),
   name: p.name,
   subtitle: p.subtitle ?? '',
@@ -54,12 +66,21 @@ const presentLot = (r) => ({
   remaining: Number(r.remaining),
   expires_at: r.expires_at,
   created_at: r.created_at,
+  room_ids: idList(r.room_ids), // vazio = vale em qualquer sala
+  rooms: [], // nomes, preenchidos por `attachRooms` nas telas que mostram o lote
   origin_booking: r.origin_code
     ? { code: r.origin_code, room: r.origin_room, date: r.origin_date, start_time: r.origin_start }
     : null,
 });
 
-const LOT_SELECT = `SELECT p.id, p.user_id, p.source, p.name, p.note, p.minutes_total, p.expires_at, p.created_at,
+/** Preenche o nome das salas em cada lote restrito. */
+async function attachRooms(lots) {
+  if (!lots.some((l) => l.room_ids.length)) return lots;
+  const names = await roomNameMap();
+  return lots.map((l) => ({ ...l, rooms: roomNamesOf(l.room_ids, names) }));
+}
+
+const LOT_SELECT = `SELECT p.id, p.user_id, p.source, p.name, p.note, p.minutes_total, p.expires_at, p.created_at, p.room_ids,
             ob.code AS origin_code, ob.date AS origin_date, ob.start_time AS origin_start, orr.name AS origin_room,
             p.minutes_total - COALESCE((
               SELECT SUM(u.minutes) FROM package_usage u JOIN bookings b ON b.id = u.booking_id
@@ -69,23 +90,28 @@ const LOT_SELECT = `SELECT p.id, p.user_id, p.source, p.name, p.note, p.minutes_
        LEFT JOIN bookings ob ON ob.id = p.booking_id
        LEFT JOIN rooms orr ON orr.id = ob.room_id`;
 
-/** Lotes pagos e ainda válidos na data, com as horas que sobram em cada um (o que vence primeiro vem antes). */
-export async function packageLots(conn, userId, date, excludeBookingId = null) {
+/**
+ * Lotes pagos e ainda válidos na data, com as horas que sobram em cada um (o que vence primeiro vem antes).
+ * Com `roomId`, só os lotes que valem naquela sala.
+ */
+export async function packageLots(conn, userId, date, excludeBookingId = null, roomId = null) {
   const rows = await conn.query(
     `${LOT_SELECT.replace('__EXCLUDE__', excludeBookingId ? ' AND b.id <> ?' : '')}
       WHERE p.user_id = ? AND p.status = 'paid' AND (p.expires_at IS NULL OR p.expires_at >= ?)
       ORDER BY CASE WHEN p.expires_at IS NULL THEN 1 ELSE 0 END, p.expires_at, p.id`,
     excludeBookingId ? [excludeBookingId, userId, date] : [userId, date],
   );
-  return rows.map(presentLot).filter((r) => r.remaining > 0);
+  return rows
+    .map(presentLot)
+    .filter((r) => r.remaining > 0 && (!roomId || r.room_ids.length === 0 || r.room_ids.includes(Number(roomId))));
 }
 
-/** Quanto do saldo cobre `minutes` numa reserva na data, e de qual compra sai cada parte. Não grava nada. */
-export async function planPackageUse(conn, { userId, date, minutes, excludeId = null }) {
+/** Quanto do saldo cobre `minutes` numa reserva na sala e data, e de qual compra sai cada parte. Não grava nada. */
+export async function planPackageUse(conn, { userId, date, minutes, excludeId = null, roomId = null }) {
   const allocations = [];
   let left = minutes;
   if (left > 0) {
-    for (const lot of await packageLots(conn, userId, date, excludeId)) {
+    for (const lot of await packageLots(conn, userId, date, excludeId, roomId)) {
       if (left <= 0) break;
       const take = Math.min(left, lot.remaining);
       allocations.push({ purchase_id: lot.id, minutes: take });
@@ -105,7 +131,7 @@ export async function savePackageUse(conn, bookingId, allocations) {
 
 /** Saldo atual do cliente: o que sobra em cada compra válida hoje. */
 export async function balanceFor(userId) {
-  const lots = await packageLots(db, userId, nowLocal().date);
+  const lots = await attachRooms(await packageLots(db, userId, nowLocal().date));
   return { minutes_available: lots.reduce((a, l) => a + l.remaining, 0), lots };
 }
 
@@ -115,8 +141,9 @@ export async function balanceFor(userId) {
 export async function packagesForClient(userId) {
   const rows = await db.query('SELECT * FROM hour_packages WHERE active = 1 ORDER BY sort_order, id');
   const pending = await db.get("SELECT package_id FROM package_purchases WHERE user_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1", [userId]);
+  const names = await roomNameMap();
   return {
-    packages: rows.map(presentPackage),
+    packages: rows.map((p) => presentPackage(p, names)),
     balance: await balanceFor(userId),
     pending_package_id: pending?.package_id == null ? null : Number(pending.package_id),
     online_payments: onlinePaymentsReady(await getSettings()),
@@ -148,9 +175,9 @@ export async function purchasePackage({ actor, packageId }) {
   if (!purchase) {
     const stamp = nowStamp();
     const r = await db.run(
-      `INSERT INTO package_purchases (user_id, package_id, name, minutes_total, price_cents, validity_days, status, created_by, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
-      [actor.id, pkg.id, pkg.name, pkg.minutes, pkg.price_cents, pkg.validity_days, actor.id, stamp, stamp],
+      `INSERT INTO package_purchases (user_id, package_id, name, minutes_total, price_cents, validity_days, room_ids, status, created_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
+      [actor.id, pkg.id, pkg.name, pkg.minutes, pkg.price_cents, pkg.validity_days, pkg.room_ids ?? null, actor.id, stamp, stamp],
     );
     const purchaseId = r.insertId;
     const rec = await db.run(
@@ -160,6 +187,9 @@ export async function purchasePackage({ actor, packageId }) {
     );
     receivableId = rec.insertId;
     await db.run('UPDATE package_purchases SET receivable_id = ? WHERE id = ?', [receivableId, purchaseId]);
+  } else {
+    // Compra pendente reaproveitada: acompanha o que o pacote vale hoje (salas, horas e validade).
+    await db.run('UPDATE package_purchases SET room_ids = ?, minutes_total = ?, validity_days = ?, updated_at = ? WHERE id = ?', [pkg.room_ids ?? null, pkg.minutes, pkg.validity_days, nowStamp(), purchase.id]);
   }
 
   // Importado aqui para não criar ciclo de módulos (as reservas dependem deste arquivo para calcular o preço).
@@ -189,9 +219,9 @@ export async function grantPackage({ actor, userId, packageId, method = 'outro' 
   const today = nowLocal().date;
   const expires = Number(pkg.validity_days) > 0 ? addDays(today, Number(pkg.validity_days)) : null;
   const r = await db.run(
-    `INSERT INTO package_purchases (user_id, package_id, name, minutes_total, price_cents, validity_days, status, paid_at, expires_at, created_by, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'paid', ?, ?, ?, ?, ?)`,
-    [userId, pkg.id, pkg.name, pkg.minutes, pkg.price_cents, pkg.validity_days, stamp, expires, actor.id, stamp, stamp],
+    `INSERT INTO package_purchases (user_id, package_id, name, minutes_total, price_cents, validity_days, room_ids, status, paid_at, expires_at, created_by, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'paid', ?, ?, ?, ?, ?)`,
+    [userId, pkg.id, pkg.name, pkg.minutes, pkg.price_cents, pkg.validity_days, pkg.room_ids ?? null, stamp, expires, actor.id, stamp, stamp],
   );
   if (Number(pkg.price_cents) > 0) {
     const rec = await db.run(
@@ -310,7 +340,7 @@ export async function bankOverview() {
       ORDER BY CASE WHEN p.expires_at IS NULL THEN 1 ELSE 0 END, p.expires_at, p.id`,
     [today],
   );
-  const lots = rows.map((r) => ({ user_id: Number(r.user_id), ...presentLot(r) })).filter((l) => l.remaining > 0);
+  const lots = (await attachRooms(rows.map(presentLot).map((l, i) => ({ ...l, user_id: Number(rows[i].user_id) })))).filter((l) => l.remaining > 0);
   const ids = [...new Set(lots.map((l) => l.user_id))];
   const users = ids.length
     ? await db.query(`SELECT id, name, email, phone FROM users WHERE id IN (${ids.map(() => '?').join(',')})`, ids)

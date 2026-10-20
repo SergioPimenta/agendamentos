@@ -12,7 +12,7 @@ import { useApi } from '../../hooks/useApi';
 import { cn } from '../../lib/cn';
 import { fmtDateFull, fmtDuration, fmtMoney } from '../../lib/format';
 import { api } from '../../services/api';
-import type { Client, HourPackage, PackagePurchase, PlanIconKey } from '../../types';
+import type { Client, HourPackage, PackagePurchase, PlanIconKey, Room } from '../../types';
 
 const parseMoney = (s: string) => Math.round(parseFloat(s.replace(/\./g, '').replace(',', '.') || '0') * 100);
 
@@ -115,10 +115,12 @@ export default function AdminPackages() {
 const blank = {
   name: '', subtitle: '', description: '', hours: '4', price: '0,00', validity: '30', icon: '' as PlanIconKey | '',
   featured: false, active: true, features: [] as string[], sort_order: 0,
+  allRooms: true, roomIds: [] as number[],
 };
 
 function PackageForm({ open, pkg, onClose, onSaved, onDelete }: { open: boolean; pkg?: HourPackage; onClose: () => void; onSaved: () => void; onDelete: (p: HourPackage) => void }) {
   const toast = useToast();
+  const rooms = useApi(() => (open ? api.get<{ rooms: Room[] }>('/admin/rooms') : Promise.resolve(null)), [open]);
   const [f, setF] = useState(blank);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -133,6 +135,7 @@ function PackageForm({ open, pkg, onClose, onSaved, onDelete }: { open: boolean;
         name: pkg.name, subtitle: pkg.subtitle, description: pkg.description, hours: String(pkg.minutes / 60).replace('.', ','),
         price: (pkg.price_cents / 100).toFixed(2).replace('.', ','), validity: String(pkg.validity_days), icon: pkg.icon,
         featured: pkg.featured, active: pkg.active, features: [...pkg.features], sort_order: pkg.sort_order,
+        allRooms: pkg.room_ids.length === 0, roomIds: [...pkg.room_ids],
       } : blank);
     }
   }
@@ -140,9 +143,14 @@ function PackageForm({ open, pkg, onClose, onSaved, onDelete }: { open: boolean;
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
+    if (!f.allRooms && f.roomIds.length === 0) {
+      setError('Escolha ao menos uma sala ou marque "Todas as salas".');
+      return;
+    }
     setSaving(true);
     try {
       const body = {
+        room_ids: f.allRooms ? [] : f.roomIds,
         name: f.name, subtitle: f.subtitle, description: f.description,
         minutes: Math.round(parseFloat(f.hours.replace(',', '.') || '0') * 60),
         price_cents: parseMoney(f.price), validity_days: Math.max(0, Math.round(Number(f.validity) || 0)),
@@ -185,6 +193,53 @@ function PackageForm({ open, pkg, onClose, onSaved, onDelete }: { open: boolean;
           <Input label="Preço (R$)" required inputMode="decimal" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} hint="Valor cobrado pelo pacote inteiro." />
           <Input label="Validade (dias)" type="number" min={0} max={3650} value={f.validity} onChange={(e) => setF({ ...f, validity: e.target.value })} hint="Contados a partir do pagamento. 0 = sem validade." />
           <Input label="Ordem na lista" type="number" min={0} max={999} value={f.sort_order} onChange={(e) => setF({ ...f, sort_order: Number(e.target.value) })} />
+        </section>
+
+        <section className="flex flex-col gap-3">
+          <h3 className="font-display text-[16px] font-medium text-ink">Salas do pacote</h3>
+          <div role="radiogroup" aria-label="Salas em que as horas valem" className="inline-flex w-fit rounded-full border border-ink/10 bg-cream p-1">
+            {([[true, 'Todas as salas'], [false, 'Só algumas salas']] as const).map(([v, label]) => (
+              <button
+                key={label}
+                type="button"
+                role="radio"
+                aria-checked={f.allRooms === v}
+                onClick={() => setF({ ...f, allRooms: v })}
+                className={cn('rounded-full px-4 py-2 text-[13px] font-semibold transition-colors', f.allRooms === v ? 'bg-sage-700 text-cream' : 'text-stone hover:text-ink')}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {f.allRooms ? (
+            <p className="text-[13px] text-stone">As horas do pacote valem em qualquer sala, inclusive as que forem criadas depois.</p>
+          ) : (
+            <>
+              <p className="text-[13px] text-stone">Marque as salas em que as horas podem ser usadas. Em reservas de outras salas, o cliente paga normalmente.</p>
+              {!rooms.data ? <Skeleton className="h-[96px]" /> : (
+                <ul className="grid gap-2 sm:grid-cols-2">
+                  {rooms.data.rooms.map((r) => {
+                    const on = f.roomIds.includes(r.id);
+                    return (
+                      <li key={r.id}>
+                        <label className={cn('flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-[13.5px] transition-colors', on ? 'border-sage-700 bg-sage-dim' : 'border-ink/12 hover:border-ink/30')}>
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 accent-sage-700"
+                            checked={on}
+                            onChange={() => setF({ ...f, roomIds: on ? f.roomIds.filter((x) => x !== r.id) : [...f.roomIds, r.id] })}
+                          />
+                          <span className="min-w-0 flex-1 truncate font-medium text-ink">{r.name}</span>
+                          {!r.active && <Badge tone="mist">Inativa</Badge>}
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </>
+          )}
+          {pkg && <p className="text-[12.5px] text-stone-light">Mudar as salas vale só para as próximas vendas: quem já comprou mantém as salas da compra.</p>}
         </section>
 
         <section className="grid gap-4 sm:grid-cols-2">

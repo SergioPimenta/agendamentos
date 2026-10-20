@@ -337,6 +337,14 @@ const migrations = [
       `ALTER TABLE package_purchases ADD COLUMN note VARCHAR(255) NOT NULL DEFAULT ''`,
     ],
   },
+  {
+    // Salas em que as horas de um pacote valem (lista de ids em JSON; vazio/nulo = todas). A compra guarda uma cópia.
+    id: '015_package_rooms',
+    statements: () => [
+      `ALTER TABLE hour_packages ADD COLUMN room_ids TEXT NULL`,
+      `ALTER TABLE package_purchases ADD COLUMN room_ids TEXT NULL`,
+    ],
+  },
 ];
 
 export async function migrate() {

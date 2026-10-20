@@ -11,7 +11,7 @@ import { requireAdmin, requireModule, verifyToken } from '../middleware/auth.js'
 import { LEVELS, MODULES, canEnterPanel, fullAccess, hasAccess, normalizePermissions } from '../services/access.js';
 import { CONSUMING, OCCUPYING, getBusinessHours, inList } from '../services/availability.js';
 import { birthdaysOfMonth } from '../services/birthdays.js';
-import { addManualCredit, bankOverview, grantPackage, listPurchases, presentPackage, revokeLot } from '../services/packages.js';
+import { addManualCredit, bankOverview, grantPackage, listPurchases, presentPackage, revokeLot, roomNameMap } from '../services/packages.js';
 import { PLAN_ICONS, PLAN_LAYOUTS, presentShowcase } from '../services/plans.js';
 import {
   BOOKING_SELECT,
@@ -48,7 +48,7 @@ router.use('/bookings', requireModule(['bookings', 'agenda']));
 router.use('/birthdays', requireModule(['birthdays']));
 router.use('/packages', requireModule(['packages']));
 router.use('/hour-bank', requireModule(['hour_bank']));
-router.use('/rooms', requireModule(['rooms'], ['agenda', 'bookings']));
+router.use('/rooms', requireModule(['rooms'], ['agenda', 'bookings', 'packages']));
 router.use('/upload', requireModule(['rooms']));
 router.use('/plans', requireModule(['plans'], ['clients', 'finance']));
 router.use('/blocks', requireModule(['blocks'], ['agenda']));
@@ -829,11 +829,22 @@ const packageInput = z.object({
   features: z.array(z.string().trim().min(1).max(200)).max(12).optional().default([]),
   active: z.boolean().optional().default(true),
   sort_order: z.coerce.number().int().min(0).max(999).optional().default(0),
+  // Salas em que as horas valem; lista vazia = todas as salas.
+  room_ids: z.array(id).max(100).optional().default([]),
 });
 
 const packageValues = (d) => [
   d.name, d.subtitle, d.description, d.minutes, d.price_cents, d.validity_days, d.icon, d.featured ? 1 : 0, JSON.stringify(d.features), d.active ? 1 : 0, d.sort_order,
+  d.room_ids.length ? JSON.stringify([...new Set(d.room_ids)]) : null,
 ];
+
+/** Recusa salas que não existem (ex.: apagadas depois de abrir o formulário). */
+async function assertRoomsExist(roomIds) {
+  const ids = [...new Set(roomIds)];
+  if (!ids.length) return;
+  const found = await db.query(`SELECT id FROM rooms WHERE id IN (${ids.map(() => '?').join(',')})`, ids);
+  if (found.length !== ids.length) throw new HttpError(400, 'Alguma das salas escolhidas não existe mais. Atualize a página.');
+}
 
 const packageRow = (pid) =>
   db.get('SELECT k.*, (SELECT COUNT(*) FROM package_purchases p WHERE p.package_id = k.id AND p.status = \'paid\') AS sold_count FROM hour_packages k WHERE k.id = ?', [pid]);
@@ -845,7 +856,8 @@ router.get(
       `SELECT k.*, (SELECT COUNT(*) FROM package_purchases p WHERE p.package_id = k.id AND p.status = 'paid') AS sold_count
          FROM hour_packages k ORDER BY k.sort_order, k.id`,
     );
-    res.json({ packages: rows.map(presentPackage) });
+    const names = await roomNameMap();
+    res.json({ packages: rows.map((p) => presentPackage(p, names)) });
   }),
 );
 
@@ -853,12 +865,13 @@ router.post(
   '/packages',
   asyncHandler(async (req, res) => {
     const d = parse(packageInput, req.body);
+    await assertRoomsExist(d.room_ids);
     const r = await db.run(
-      `INSERT INTO hour_packages (name, subtitle, description, minutes, price_cents, validity_days, icon, featured, features, active, sort_order, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO hour_packages (name, subtitle, description, minutes, price_cents, validity_days, icon, featured, features, active, sort_order, room_ids, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [...packageValues(d), nowStamp()],
     );
-    res.status(201).json({ package: presentPackage(await packageRow(r.insertId)) });
+    res.status(201).json({ package: presentPackage(await packageRow(r.insertId), await roomNameMap()) });
   }),
 );
 
@@ -885,11 +898,12 @@ router.put(
     const pid = Number(req.params.id);
     if (!(await db.get('SELECT id FROM hour_packages WHERE id = ?', [pid]))) throw new HttpError(404, 'Pacote não encontrado.');
     const d = parse(packageInput, req.body);
+    await assertRoomsExist(d.room_ids);
     await db.run(
-      `UPDATE hour_packages SET name = ?, subtitle = ?, description = ?, minutes = ?, price_cents = ?, validity_days = ?, icon = ?, featured = ?, features = ?, active = ?, sort_order = ? WHERE id = ?`,
+      `UPDATE hour_packages SET name = ?, subtitle = ?, description = ?, minutes = ?, price_cents = ?, validity_days = ?, icon = ?, featured = ?, features = ?, active = ?, sort_order = ?, room_ids = ? WHERE id = ?`,
       [...packageValues(d), pid],
     );
-    res.json({ package: presentPackage(await packageRow(pid)) });
+    res.json({ package: presentPackage(await packageRow(pid), await roomNameMap()) });
   }),
 );
 

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { CalendarClock, Check, Clock } from 'lucide-react';
+import { CalendarClock, Check, Clock, DoorOpen } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { fmtDuration, fmtMoney } from '../../lib/format';
 import type { HourPackage } from '../../types';
@@ -41,6 +41,10 @@ export function PackageCard({ pkg, badges, footer, className }: { pkg: HourPacka
         <li className={cn('flex items-center gap-3 text-[14px]', dark ? 'text-cream/90' : 'text-stone')}>
           <span className={cn('flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full', dark ? 'bg-cream/15' : 'bg-sand text-stone')}><CalendarClock size={13} /></span>
           {validityText(pkg.validity_days)}
+        </li>
+        <li className={cn('flex items-start gap-3 text-[14px] leading-snug', dark ? 'text-cream/90' : 'text-stone')}>
+          <span className={cn('mt-0.5 flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full', dark ? 'bg-cream/15' : 'bg-sand text-stone')}><DoorOpen size={13} /></span>
+          <span>{pkg.rooms.length > 0 ? `Vale em: ${pkg.rooms.join(', ')}` : 'Vale em todas as salas'}</span>
         </li>
         {pkg.features.map((f, i) => (
           <li key={i} className={cn('flex items-start gap-3 text-[14px] leading-snug', dark ? 'text-cream/90' : 'text-stone')}>
