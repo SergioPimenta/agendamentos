@@ -256,6 +256,20 @@ const migrations = [
     id: '010_plan_change',
     statements: () => [`ALTER TABLE receivables ADD COLUMN plan_id INT NULL`],
   },
+  {
+    // Vitrine do plano, editável pelo painel: ícone, textos, lista de benefícios e tabela de descontos.
+    id: '011_plan_showcase',
+    statements: () => [
+      `ALTER TABLE plans ADD COLUMN subtitle VARCHAR(120) NOT NULL DEFAULT ''`,
+      `ALTER TABLE plans ADD COLUMN icon VARCHAR(20) NOT NULL DEFAULT ''`,
+      `ALTER TABLE plans ADD COLUMN price_label VARCHAR(80) NOT NULL DEFAULT ''`,
+      `ALTER TABLE plans ADD COLUMN price_note VARCHAR(120) NOT NULL DEFAULT ''`,
+      `ALTER TABLE plans ADD COLUMN featured INT NOT NULL DEFAULT 0`,
+      `ALTER TABLE plans ADD COLUMN features TEXT NULL`,
+      `ALTER TABLE plans ADD COLUMN tiers TEXT NULL`,
+      `ALTER TABLE plans ADD COLUMN tiers_note VARCHAR(255) NOT NULL DEFAULT ''`,
+    ],
+  },
 ];
 
 export async function migrate() {
@@ -323,6 +337,75 @@ const plans = [
   ['Plano Ecossistema', 'Pós-pago mensalista: use primeiro e pague depois, no dia 05 do mês seguinte. Para profissionais consolidados.', 0, 0, 0, 0],
 ];
 
+/**
+ * Vitrine dos planos atuais, como aparece no site. Aplicada uma vez por banco (`fillPlanShowcase`);
+ * depois disso tudo é editado pelo painel (Planos).
+ */
+const PLAN_SHOWCASE = {
+  [DEFAULT_PLAN_NAME]: {
+    subtitle: 'Sublocação esporádica',
+    description: 'Para quem valoriza a flexibilidade absoluta e o fluir do momento.',
+    icon: 'leaf',
+    price_label: 'R$ 27,00 a R$ 45,00',
+    price_note: '/hora, conforme a sala',
+    featured: 0,
+    features: [
+      'Sublocação por hora esporádica, sem mensalidades fixas',
+      'Acesso livre e agendamento online prático em segundos',
+      'Descontos automáticos para blocos de 4h, 6h ou 8h no mesmo dia',
+    ],
+    tiers: [],
+    tiers_note: '',
+  },
+  'Plano Raiz': {
+    subtitle: 'Combo de 4 horas',
+    description: 'Dê sustentação e base estável para os seus atendimentos semanais.',
+    icon: 'sprout',
+    price_label: 'R$ 144,00',
+    price_note: '/mês (a hora sai por R$ 36,00)',
+    featured: 1,
+    features: [
+      'Lote de 4 horas pré-pagas, para usar com liberdade ao longo de 30 dias',
+      'O formato ideal para quem tem ao menos um consultante fixo por semana',
+      'Tarifa reduzida por hora em relação ao Modo Brisa',
+      'Envio automático de convites personalizados (mapa e estacionamento) para seus atendidos',
+    ],
+    tiers: [],
+    tiers_note: '',
+  },
+  'Plano Ecossistema': {
+    subtitle: 'Pós-pago mensalista',
+    description: 'A escolha prática para profissionais consolidados: liberdade e inteligência de caixa.',
+    icon: 'tree',
+    price_label: 'Usa primeiro',
+    price_note: ', paga depois (dia 05)',
+    featured: 0,
+    features: [
+      'Agende livremente e pague só no dia 05 do mês seguinte',
+      'Total autonomia com senha eletrônica e reconhecimento facial na portaria 24h',
+      'Depósito de garantia de R$ 400,00, 100% reembolsável ao término do contrato',
+    ],
+    tiers: [
+      { label: 'De 10 a 29,5 horas no mês', benefit: '-R$ 2,00 de desconto por hora' },
+      { label: 'De 30 a 49,5 horas no mês', benefit: '-R$ 6,00 de desconto por hora' },
+      { label: 'Acima de 50 horas no mês', benefit: '-R$ 8,00 de desconto por hora' },
+    ],
+    tiers_note: 'Desconto progressivo por fidelidade.',
+  },
+};
+
+/** Preenche a vitrine dos três planos atuais (uma vez por banco; nunca sobrescreve edições posteriores). */
+async function fillPlanShowcase() {
+  if (await db.get("SELECT k FROM settings WHERE k = 'plans_showcase'")) return;
+  for (const [name, s] of Object.entries(PLAN_SHOWCASE)) {
+    await db.run(
+      `UPDATE plans SET subtitle = ?, description = ?, icon = ?, price_label = ?, price_note = ?, featured = ?, features = ?, tiers = ?, tiers_note = ? WHERE name = ?`,
+      [s.subtitle, s.description, s.icon, s.price_label, s.price_note, s.featured, JSON.stringify(s.features), JSON.stringify(s.tiers), s.tiers_note, name],
+    );
+  }
+  await db.run("INSERT INTO settings (k, v) VALUES ('plans_showcase', 'v1')");
+}
+
 /** Planos da primeira versão do sistema, substituídos pelo catálogo atual (ver `swapPlanCatalog`). */
 const LEGACY_PLAN_NAMES = ['Avulso', 'Day Pass', 'Flex', 'Sala Privativa'];
 
@@ -375,6 +458,7 @@ export async function seed() {
   }
 
   await swapPlanCatalog();
+  await fillPlanShowcase();
 
   const roomCount = await db.get('SELECT COUNT(*) AS n FROM rooms');
   if (!Number(roomCount.n)) {

@@ -11,6 +11,7 @@ import { requireAdmin, requireModule, verifyToken } from '../middleware/auth.js'
 import { LEVELS, MODULES, canEnterPanel, fullAccess, hasAccess, normalizePermissions } from '../services/access.js';
 import { CONSUMING, OCCUPYING, getBusinessHours, inList } from '../services/availability.js';
 import { birthdaysOfMonth } from '../services/birthdays.js';
+import { PLAN_ICONS, presentShowcase } from '../services/plans.js';
 import {
   BOOKING_SELECT,
   changeStatus,
@@ -728,9 +729,21 @@ const planInput = z.object({
   price_cents: z.coerce.number().int().min(0).max(10_000_000).optional().default(0),
   active: z.boolean().optional().default(true),
   sort_order: z.coerce.number().int().min(0).max(999).optional().default(0),
+  // Vitrine: como o plano aparece para o cliente.
+  subtitle: z.string().trim().max(120).optional().default(''),
+  icon: z.enum(PLAN_ICONS).or(z.literal('')).optional().default(''),
+  price_label: z.string().trim().max(80).optional().default(''),
+  price_note: z.string().max(120).optional().default(''),
+  featured: z.boolean().optional().default(false),
+  features: z.array(z.string().trim().min(1).max(200)).max(12).optional().default([]),
+  tiers: z.array(z.object({ label: z.string().trim().min(1).max(80), benefit: z.string().trim().min(1).max(80) })).max(8).optional().default([]),
+  tiers_note: z.string().trim().max(255).optional().default(''),
 });
 
+const showcaseValues = (d) => [d.subtitle, d.icon, d.price_label, d.price_note, d.featured ? 1 : 0, JSON.stringify(d.features), JSON.stringify(d.tiers), d.tiers_note];
+
 const presentPlan = (p) => ({
+  ...presentShowcase(p),
   id: Number(p.id),
   name: p.name,
   description: p.description,
@@ -756,8 +769,10 @@ router.post(
   asyncHandler(async (req, res) => {
     const d = parse(planInput, req.body);
     const r = await db.run(
-      'INSERT INTO plans (name, description, included_minutes, unlimited, room_discount_percent, price_cents, active, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [d.name, d.description, d.included_minutes, d.unlimited ? 1 : 0, d.room_discount_percent, d.price_cents, d.active ? 1 : 0, d.sort_order],
+      `INSERT INTO plans (name, description, included_minutes, unlimited, room_discount_percent, price_cents, active, sort_order,
+                          subtitle, icon, price_label, price_note, featured, features, tiers, tiers_note)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [d.name, d.description, d.included_minutes, d.unlimited ? 1 : 0, d.room_discount_percent, d.price_cents, d.active ? 1 : 0, d.sort_order, ...showcaseValues(d)],
     );
     res.status(201).json({ plan: presentPlan(await db.get('SELECT * FROM plans WHERE id = ?', [r.insertId])) });
   }),
@@ -770,8 +785,9 @@ router.put(
     if (!(await db.get('SELECT id FROM plans WHERE id = ?', [pid]))) throw new HttpError(404, 'Plano não encontrado.');
     const d = parse(planInput, req.body);
     await db.run(
-      'UPDATE plans SET name = ?, description = ?, included_minutes = ?, unlimited = ?, room_discount_percent = ?, price_cents = ?, active = ?, sort_order = ? WHERE id = ?',
-      [d.name, d.description, d.included_minutes, d.unlimited ? 1 : 0, d.room_discount_percent, d.price_cents, d.active ? 1 : 0, d.sort_order, pid],
+      `UPDATE plans SET name = ?, description = ?, included_minutes = ?, unlimited = ?, room_discount_percent = ?, price_cents = ?, active = ?, sort_order = ?,
+              subtitle = ?, icon = ?, price_label = ?, price_note = ?, featured = ?, features = ?, tiers = ?, tiers_note = ? WHERE id = ?`,
+      [d.name, d.description, d.included_minutes, d.unlimited ? 1 : 0, d.room_discount_percent, d.price_cents, d.active ? 1 : 0, d.sort_order, ...showcaseValues(d), pid],
     );
     res.json({ plan: presentPlan(await db.get('SELECT * FROM plans WHERE id = ?', [pid])) });
   }),

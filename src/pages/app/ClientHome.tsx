@@ -124,7 +124,7 @@ export default function ClientHome() {
                   <ProgressBar value={u.included_used} max={u.included_total} />
                 </div>
               ) : (
-                <p className="text-[13.5px] leading-relaxed text-stone">Você paga apenas pelas horas que usar. Fale com a recepção para conhecer os planos com horas incluídas.</p>
+                <p className="text-[13.5px] leading-relaxed text-stone">Você paga apenas pelas horas que usar. <Link to="/app/planos" className="font-semibold text-sage-700">Conheça os planos</Link> com horas incluídas.</p>
               )}
 
               <div className="grid grid-cols-2 gap-3 border-t border-ink/8 pt-4">

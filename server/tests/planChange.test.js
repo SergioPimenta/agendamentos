@@ -144,6 +144,44 @@ describe('o cliente escolhe o plano', () => {
     assert.equal(await myPlan(), 'Modo Brisa');
   });
 
+  it('a vitrine dos planos vem preenchida e a administração edita tudo', async () => {
+    const eco = planByName('Plano Ecossistema');
+    assert.equal(eco.subtitle, 'Pós-pago mensalista');
+    assert.equal(eco.icon, 'tree');
+    assert.equal(eco.price_label, 'Usa primeiro');
+    assert.equal(eco.price_note, ', paga depois (dia 05)');
+    assert.equal(eco.features.length, 3);
+    assert.deepEqual(eco.tiers[0], { label: 'De 10 a 29,5 horas no mês', benefit: '-R$ 2,00 de desconto por hora' });
+    assert.equal(planByName('Plano Raiz').featured, true);
+    assert.equal(planByName('Plano Raiz').features.length, 4);
+    assert.equal(planByName('Modo Brisa').features.length, 3);
+
+    const edited = await call('PUT', `/admin/plans/${eco.id}`, {
+      token: admin,
+      body: {
+        name: eco.name, description: eco.description, subtitle: 'Novo subtítulo', icon: 'sun', price_label: 'Sob consulta', price_note: ' /mês',
+        featured: true, features: ['Primeiro benefício', 'Segundo benefício'], tiers: [{ label: 'Acima de 5 horas', benefit: '-R$ 1,00 por hora' }], tiers_note: 'Nota',
+      },
+    });
+    assert.equal(edited.status, 200);
+    const p = edited.body.plan;
+    assert.equal(p.subtitle, 'Novo subtítulo');
+    assert.equal(p.icon, 'sun');
+    assert.equal(p.featured, true);
+    assert.deepEqual(p.features, ['Primeiro benefício', 'Segundo benefício']);
+    assert.deepEqual(p.tiers, [{ label: 'Acima de 5 horas', benefit: '-R$ 1,00 por hora' }]);
+
+    // O cliente enxerga o que a administração salvou.
+    const mine = (await call('GET', '/me/plans', { token: client })).body.plans.find((x) => x.id === eco.id);
+    assert.equal(mine.price_label, 'Sob consulta');
+    assert.deepEqual(mine.features, ['Primeiro benefício', 'Segundo benefício']);
+
+    // Ícone fora da lista e benefício vazio são recusados.
+    const bad = (extra) => call('PUT', `/admin/plans/${eco.id}`, { token: admin, body: { name: eco.name, ...extra } });
+    assert.equal((await bad({ icon: 'foguete' })).status, 400);
+    assert.equal((await bad({ features: [''] })).status, 400);
+  });
+
   it('trocar de ideia antes de pagar descarta a cobrança anterior; plano inativo some', async () => {
     // Planos pagos extras, criados pela administração só para este teste.
     const mk = async (name, price_cents) => (await call('POST', '/admin/plans', { token: admin, body: { name, price_cents } })).body.plan;

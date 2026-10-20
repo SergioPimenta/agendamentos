@@ -1,6 +1,23 @@
 export type Role = 'admin' | 'client';
 
-export interface Plan {
+/** Ícones disponíveis para o cartão do plano. */
+export type PlanIconKey = 'leaf' | 'sprout' | 'tree' | 'flower' | 'sun' | 'mountain';
+
+/** Como o plano aparece para o cliente (editado pela administração em Planos). */
+export interface PlanShowcase {
+  subtitle: string;
+  icon: PlanIconKey | '';
+  /** Destaque de preço (ex.: "R$ 144,00" ou "Usa primeiro"); vazio = usa a mensalidade do plano. */
+  price_label: string;
+  /** Texto menor ao lado do preço (ex.: "/mês (a hora sai por R$ 36,00)"). */
+  price_note: string;
+  featured: boolean;
+  features: string[];
+  tiers: { label: string; benefit: string }[];
+  tiers_note: string;
+}
+
+export interface Plan extends PlanShowcase {
   id: number;
   name: string;
   description: string;
@@ -371,7 +388,7 @@ export interface FinanceOverview {
 /* ---------- Pagamento online (Pagar.me) ---------- */
 
 /** Plano como o cliente o vê na hora de escolher. */
-export interface ClientPlan {
+export interface ClientPlan extends PlanShowcase {
   id: number;
   name: string;
   description: string;

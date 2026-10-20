@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Check, Infinity as InfinityIcon, ShieldCheck } from 'lucide-react';
+import { Check, ShieldCheck } from 'lucide-react';
+import { PlanCard } from '../../components/plans/PlanCard';
 import { Button } from '../../components/ui/Button';
 import { Badge, ErrorState, Skeleton, useConfirm, useToast } from '../../components/ui/Feedback';
 import { useAuth } from '../../contexts/AuthContext';
 import { useApi } from '../../hooks/useApi';
-import { cn } from '../../lib/cn';
-import { fmtDuration, fmtMoney } from '../../lib/format';
+import { fmtMoney } from '../../lib/format';
 import { api } from '../../services/api';
 import { PageHeader } from '../../components/ui/Misc';
 import type { ClientPlan, ClientPlans, OnlinePayment, User } from '../../types';
@@ -72,45 +72,31 @@ export default function PlansPage() {
 
       {q.error && <ErrorState message={q.error} onRetry={q.refetch} />}
 
-      <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
-        {!d ? [0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-[330px] rounded-[24px]" />) : d.plans.map((p) => {
+      <div className="grid items-stretch gap-5 md:grid-cols-2 xl:grid-cols-3">
+        {!d ? [0, 1, 2].map((i) => <Skeleton key={i} className="h-[520px] rounded-[24px]" />) : d.plans.map((p) => {
           const current = p.id === d.current_plan_id;
           const pending = p.id === d.pending_plan_id;
           const paid = p.price_cents > 0;
           const blocked = paid && !d.online_payments;
+          const label = current ? 'Plano atual' : blocked ? 'Fale com a recepção' : paid ? (pending ? 'Continuar pagamento' : `Assinar · ${fmtMoney(p.price_cents)}`) : 'Mudar para este plano';
           return (
-            <article
+            <PlanCard
               key={p.id}
-              className={cn('flex flex-col rounded-[24px] border bg-cream p-6', current ? 'border-sage-700 ring-2 ring-sage-700/15' : 'border-ink/8')}
-            >
-              <div className="flex items-start justify-between gap-2">
-                <h2 className="font-display text-[20px] font-medium text-ink">{p.name}</h2>
-                {current ? <Badge tone="sage"><Check size={12} />Seu plano</Badge> : pending ? <Badge tone="amber">Aguardando pagamento</Badge> : null}
-              </div>
-              <p className="mt-1.5 min-h-[40px] text-[13px] leading-snug text-stone">{p.description}</p>
-              <p className="mt-5 font-display text-[30px] leading-none font-medium text-ink">
-                {paid ? fmtMoney(p.price_cents) : 'Sem mensalidade'}
-                {paid && <span className="text-[13px] font-normal text-stone">/mês</span>}
-              </p>
-              <ul className="mt-5 flex flex-1 flex-col gap-2 text-[13px] text-stone">
-                <li className="flex items-center gap-2">
-                  {p.unlimited ? <><InfinityIcon size={15} className="text-sage-700" />Salas ilimitadas</>
-                    : p.included_minutes ? <><Check size={15} className="text-sage-700" />{fmtDuration(p.included_minutes)} de sala por mês</>
-                    : <><span className="w-[15px] text-center text-stone-light">•</span>Sem horas incluídas</>}
-                </li>
-                {p.room_discount_percent > 0 && <li className="flex items-center gap-2"><Check size={15} className="text-sage-700" />{p.room_discount_percent}% off nas horas extras</li>}
-                {!p.unlimited && <li className="flex items-center gap-2"><span className="w-[15px] text-center text-stone-light">•</span>Horas além do plano pagas por uso</li>}
-              </ul>
-              <Button
-                className="mt-6"
-                variant={current ? 'secondary' : 'primary'}
-                disabled={current || blocked}
-                loading={busy === p.id}
-                onClick={() => choose(p)}
-              >
-                {current ? 'Plano atual' : blocked ? 'Fale com a recepção' : paid ? (pending ? 'Continuar pagamento' : `Assinar · ${fmtMoney(p.price_cents)}`) : 'Mudar para este plano'}
-              </Button>
-            </article>
+              plan={p}
+              className={current && !p.featured ? 'border-sage-700 ring-2 ring-sage-700/15' : undefined}
+              badges={current ? <Badge tone={p.featured ? 'mist' : 'sage'}><Check size={12} />Seu plano</Badge> : pending ? <Badge tone="amber">Aguardando pagamento</Badge> : null}
+              footer={
+                <Button
+                  className="w-full"
+                  variant={p.featured ? (current ? 'outline-light' : 'light') : current ? 'secondary' : 'primary'}
+                  disabled={current || blocked}
+                  loading={busy === p.id}
+                  onClick={() => choose(p)}
+                >
+                  {label}
+                </Button>
+              }
+            />
           );
         })}
       </div>

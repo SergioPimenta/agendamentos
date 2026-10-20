@@ -11,7 +11,32 @@ import { getSettings, onlinePaymentsReady } from './settings.js';
  *    O plano só muda quando o pagamento é confirmado (`activatePlanForReceivable`, chamado na baixa).
  */
 
+/** Ícones que a administração pode escolher para o cartão do plano. */
+export const PLAN_ICONS = ['leaf', 'sprout', 'tree', 'flower', 'sun', 'mountain'];
+
+const jsonList = (s) => {
+  try {
+    const v = JSON.parse(s || '[]');
+    return Array.isArray(v) ? v : [];
+  } catch {
+    return [];
+  }
+};
+
+/** A "vitrine" do plano: ícone, textos, benefícios e tabela de descontos (tudo editável no painel). */
+export const presentShowcase = (p) => ({
+  subtitle: p.subtitle ?? '',
+  icon: p.icon ?? '',
+  price_label: p.price_label ?? '',
+  price_note: p.price_note ?? '',
+  featured: Boolean(Number(p.featured ?? 0)),
+  features: jsonList(p.features),
+  tiers: jsonList(p.tiers),
+  tiers_note: p.tiers_note ?? '',
+});
+
 const presentPlan = (p) => ({
+  ...presentShowcase(p),
   id: Number(p.id),
   name: p.name,
   description: p.description,
@@ -23,9 +48,7 @@ const presentPlan = (p) => ({
 
 /** Planos que o cliente pode escolher, o atual e a troca que está aguardando pagamento (se houver). */
 export async function plansForClient(userId) {
-  const rows = await db.query(
-    'SELECT id, name, description, included_minutes, unlimited, room_discount_percent, price_cents FROM plans WHERE active = 1 ORDER BY sort_order, id',
-  );
+  const rows = await db.query('SELECT * FROM plans WHERE active = 1 ORDER BY sort_order, id');
   const user = await db.get('SELECT plan_id FROM users WHERE id = ?', [userId]);
   const pending = await db.get(
     "SELECT plan_id FROM receivables WHERE user_id = ? AND status = 'pending' AND plan_id IS NOT NULL ORDER BY id DESC LIMIT 1",
