@@ -3,6 +3,7 @@ import { db } from '../db/index.js';
 import { HttpError } from '../utils/http.js';
 import { addDays, nowLocal, nowStamp } from '../utils/time.js';
 import { CONSUMING, inList } from './availability.js';
+import { activatePlanForReceivable } from './plans.js';
 import { getSettings } from './settings.js';
 
 /**
@@ -215,6 +216,7 @@ export async function setEntryPaid(table, id, paid, { method: m, date } = {}) {
   if (!row) throw new HttpError(404, 'Lançamento não encontrado.');
   if (paid) {
     await db.run(`UPDATE ${t} SET status = 'paid', paid_at = ?, payment_method = ?, updated_at = ? WHERE id = ?`, [paidStamp(date), method(m), nowStamp(), id]);
+    if (table === 'receivables') await activatePlanForReceivable(id); // baixa manual de uma troca de plano também vale
   } else {
     await db.run(`UPDATE ${t} SET status = 'pending', paid_at = NULL, payment_method = NULL, updated_at = ? WHERE id = ?`, [nowStamp(), id]);
   }
@@ -250,7 +252,8 @@ export async function generatePlanFees(month, rules) {
   let created = 0;
   for (const u of users) {
     const ref = `plan:${u.id}:${month}`;
-    if (await db.get('SELECT id FROM receivables WHERE ref = ?', [ref])) continue;
+    // Também conta a mensalidade gerada quando o cliente trocou de plano no mês (referência com sufixo).
+    if (await db.get('SELECT id FROM receivables WHERE ref = ? OR ref LIKE ?', [ref, `${ref}:%`])) continue;
     await db.run(
       `INSERT INTO receivables (user_id, description, category, amount_cents, due_date, status, ref, created_at, updated_at)
        VALUES (?, ?, 'Mensalidade de plano', ?, ?, 'pending', ?, ?, ?)`,

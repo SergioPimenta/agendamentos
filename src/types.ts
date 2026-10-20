@@ -370,6 +370,25 @@ export interface FinanceOverview {
 
 /* ---------- Pagamento online (Pagar.me) ---------- */
 
+/** Plano como o cliente o vê na hora de escolher. */
+export interface ClientPlan {
+  id: number;
+  name: string;
+  description: string;
+  included_minutes: number;
+  unlimited: boolean;
+  room_discount_percent: number;
+  price_cents: number;
+}
+
+export interface ClientPlans {
+  plans: ClientPlan[];
+  current_plan_id: number | null;
+  /** Plano escolhido que ainda aguarda o pagamento. */
+  pending_plan_id: number | null;
+  online_payments: boolean;
+}
+
 export interface OnlinePayment {
   id: number;
   user_id: number;

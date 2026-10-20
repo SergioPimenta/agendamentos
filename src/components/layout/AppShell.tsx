@@ -20,6 +20,7 @@ const clientNav: NavItem[] = [
   { to: '/app/reservar', label: 'Reservar sala', icon: <CalendarPlus size={18} /> },
   { to: '/app/reservas', label: 'Minhas reservas', icon: <CalendarCheck size={18} /> },
   { to: '/app/salas', label: 'Salas', icon: <DoorOpen size={18} /> },
+  { to: '/app/planos', label: 'Planos', icon: <Tags size={18} /> },
   { to: '/app/consumo', label: 'Consumo e faturas', icon: <Receipt size={18} /> },
   { to: '/app/perfil', label: 'Meu perfil', icon: <UserRound size={18} /> },
   { to: '/app/ajuda', label: 'Ajuda', icon: <LifeBuoy size={18} /> },

@@ -7,6 +7,7 @@ import { CONSUMING, inList } from './availability.js';
 import { MIN_ONLINE_CENTS, formatBRL, getBookingRow, notifyBookingPaid, releaseExpiredHolds } from './bookings.js';
 import { sendTemplated } from './emailTemplates.js';
 import { METHOD_MAP, createCheckoutOrder, createDirectOrder, getOrder, pagarmeConfigured, pagarmeMode } from './pagarme.js';
+import { activatePlanForReceivable } from './plans.js';
 import { getSettings, onlinePaymentsReady } from './settings.js';
 
 /**
@@ -93,11 +94,12 @@ async function collectItems({ userId, scope, month, bookingId, receivableId }) {
  * Gera (ou reaproveita) o link de pagamento. `actor` é quem pediu: o próprio cliente ou a administração.
  * Um cliente só cobra a si mesmo.
  */
-export async function createCharge({ actor, userId, scope, month, bookingId, receivableId }) {
+export async function createCharge({ actor, userId, scope, month, bookingId, receivableId, trusted = false, successPath = '/app/consumo' }) {
   const rules = await getSettings();
   if (!onlinePaymentsReady(rules)) throw new HttpError(422, 'O pagamento online não está ativado.');
   if (actor.role !== 'admin' && Number(actor.id) !== Number(userId)) throw new HttpError(403, 'Você só pode pagar as suas próprias contas.');
-  if (scope === 'receivable' && actor.role !== 'admin') throw new HttpError(403, 'Apenas a administração gera cobrança de lançamentos avulsos.');
+  // `trusted`: o próprio servidor gerou o lançamento (ex.: mensalidade de troca de plano) para este cliente.
+  if (scope === 'receivable' && actor.role !== 'admin' && !trusted) throw new HttpError(403, 'Apenas a administração gera cobrança de lançamentos avulsos.');
 
   const user = await db.get('SELECT id, name, email, document FROM users WHERE id = ? AND active = 1', [userId]);
   if (!user) throw new HttpError(404, 'Cliente não encontrado.');
@@ -138,7 +140,7 @@ export async function createCharge({ actor, userId, scope, month, bookingId, rec
       methods,
       expiresMinutes: rules.pagarme_expires_minutes,
       installments: methods.includes('credit_card') ? rules.pagarme_max_installments : 1,
-      successUrl: `${config.appUrl}/app/consumo?pagamento=${id}`,
+      successUrl: `${config.appUrl}${successPath}?pagamento=${id}`,
       metadata: { online_payment_id: String(id), user_id: String(userId) },
       statementDescriptor: String(rules.business_name || 'HARMONIZEOSER').toUpperCase().replace(/[^A-Z0-9 ]/g, ''),
     });
@@ -201,7 +203,10 @@ async function settle(payment, order, charge) {
     }
     for (const it of items.receivables) {
       const r = await tx.run("UPDATE receivables SET status = 'paid', paid_at = ?, payment_method = ?, updated_at = ? WHERE id = ? AND status = 'pending'", [stamp, method, nowStamp(), it.id]);
-      if (r.changes > 0) settled++; else skipped++;
+      if (r.changes > 0) {
+        settled++;
+        await activatePlanForReceivable(it.id, tx); // mensalidade de troca de plano: o novo plano passa a valer
+      } else skipped++;
     }
 
     const review = skipped > 0 || cancelledPaid > 0;

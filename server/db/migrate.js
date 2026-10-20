@@ -251,6 +251,11 @@ const migrations = [
       `ALTER TABLE users ADD COLUMN birthday_sent_year INT NULL`,
     ],
   },
+  {
+    // Troca de plano pelo cliente: a mensalidade gerada guarda o plano que ela ativa quando for paga.
+    id: '010_plan_change',
+    statements: () => [`ALTER TABLE receivables ADD COLUMN plan_id INT NULL`],
+  },
 ];
 
 export async function migrate() {

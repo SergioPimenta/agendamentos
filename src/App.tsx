@@ -16,6 +16,7 @@ import Reserve from './pages/app/Reserve';
 import MyBookings from './pages/app/MyBookings';
 import RoomsCatalog from './pages/app/RoomsCatalog';
 import Usage from './pages/app/Usage';
+import PlansPage from './pages/app/PlansPage';
 import Profile from './pages/app/Profile';
 import Help from './pages/app/Help';
 import RoomPage from './pages/app/RoomPage';
@@ -124,6 +125,7 @@ export default function App() {
               <Route path="salas" element={<RoomsCatalog />} />
               <Route path="salas/:slug" element={<RoomPage />} />
               <Route path="sessao/:slug" element={<RoomSession />} />
+              <Route path="planos" element={<PlansPage />} />
               <Route path="consumo" element={<Usage />} />
               <Route path="perfil" element={<Profile />} />
               <Route path="ajuda" element={<Help />} />

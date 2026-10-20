@@ -27,6 +27,7 @@ import {
 import { checkIn, checkOut, checkoutPreview, findRoomSession, computeOvertime } from '../services/sessions.js';
 import { createCharge, getPaymentFor, payBookingDirect, presentPayment, syncPayment } from '../services/onlinePayments.js';
 import { config } from '../config.js';
+import { plansForClient, subscribeToPlan } from '../services/plans.js';
 import { onlinePaymentsReady } from '../services/settings.js';
 import { getSettings, publicSettings } from '../services/settings.js';
 import { HttpError, asyncHandler, parse } from '../utils/http.js';
@@ -485,6 +486,23 @@ router.get(
     const q = parse(z.object({ month: z.string().regex(/^\d{4}-\d{2}$/).optional() }), req.query);
     const month = q.month || nowLocal().date.slice(0, 7);
     res.json(await monthStatement(req.user.id, month, await getSettings()));
+  }),
+);
+
+/** Planos disponíveis para o cliente escolher, com o plano atual e a troca aguardando pagamento. */
+router.get(
+  '/me/plans',
+  asyncHandler(async (req, res) => {
+    res.json(await plansForClient(req.user.id));
+  }),
+);
+
+/** O cliente escolhe um plano: vale na hora se for sem mensalidade; se for pago, devolve o link de pagamento. */
+router.post(
+  '/me/plans/:id/subscribe',
+  asyncHandler(async (req, res) => {
+    const planId = parse(z.coerce.number().int().positive(), req.params.id);
+    res.status(201).json(await subscribeToPlan({ actor: req.user, planId }));
   }),
 );
 
