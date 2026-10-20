@@ -7,7 +7,8 @@ import crypto from 'crypto';
 import { z } from 'zod';
 import { config } from '../config.js';
 import { db } from '../db/index.js';
-import { requireAdmin, verifyToken } from '../middleware/auth.js';
+import { requireAdmin, requireModule, verifyToken } from '../middleware/auth.js';
+import { LEVELS, MODULES, canEnterPanel, hasAccess, normalizePermissions } from '../services/access.js';
 import { CONSUMING, OCCUPYING, getBusinessHours, inList } from '../services/availability.js';
 import {
   BOOKING_SELECT,
@@ -35,6 +36,24 @@ import { monthStatement, presentRoom } from './app.js';
 
 const router = express.Router();
 router.use(verifyToken, requireAdmin);
+
+/* Nível de acesso por área (perfis de usuário). Consultar pede "ver"; alterar pede "editar". */
+router.use('/dashboard', requireModule(['dashboard']));
+router.use('/agenda', requireModule(['agenda']));
+router.use('/bookings', requireModule(['bookings', 'agenda']));
+router.use('/rooms', requireModule(['rooms'], ['agenda', 'bookings']));
+router.use('/upload', requireModule(['rooms']));
+router.use('/plans', requireModule(['plans'], ['clients', 'finance']));
+router.use('/blocks', requireModule(['blocks'], ['agenda']));
+router.use('/email-templates', requireModule(['email_templates']));
+router.use('/reports', (req, res, next) => requireModule(['reports'], req.path === '/export' ? ['bookings'] : [])(req, res, next));
+router.use(['/profiles', '/profiles-users'], requireModule(['profiles']));
+router.use('/users', (req, res, next) => {
+  const isList = req.method === 'GET' && req.path === '/';
+  return requireModule(['clients'], isList ? ['bookings', 'agenda', 'finance'] : [])(req, res, next);
+});
+// Regras e horários do espaço são lidas por várias telas; só quem tem Configurações altera.
+router.use(['/settings', '/hours'], (req, res, next) => (req.method === 'GET' ? next() : requireModule(['settings'])(req, res, next)));
 
 const id = z.coerce.number().int().positive();
 const date = z.string().regex(DATE_RE, 'Data inválida').refine(isValidDate, 'Data inválida');
@@ -347,7 +366,9 @@ const userInput = z.object({
   name: z.string().trim().min(2, 'Informe o nome').max(120),
   email: z.string().trim().toLowerCase().email('E-mail inválido').max(160),
   password: z.string().min(8, 'A senha precisa ter ao menos 8 caracteres').max(100).optional().or(z.literal('')),
-  role: z.enum(['client', 'admin']).optional().default('client'),
+  // Acesso ao painel: `profile_id` escolhe o perfil (null = cliente, sem painel). `role: 'admin'` sem perfil = Administrador.
+  role: z.enum(['client', 'admin']).optional(),
+  profile_id: z.coerce.number().int().positive().nullable().optional(),
   phone: z.string().trim().max(30).optional().default(''),
   document: z.string().trim().max(20).optional().default(''),
   company: z.string().trim().max(120).optional().default(''),
@@ -361,6 +382,8 @@ const presentUser = (u) => ({
   name: u.name,
   email: u.email,
   role: u.role,
+  profile_id: u.profile_id == null ? null : Number(u.profile_id),
+  profile_name: u.profile_name ?? null,
   phone: u.phone,
   document: u.document,
   company: u.company,
@@ -372,6 +395,37 @@ const presentUser = (u) => ({
   created_at: u.created_at,
   ...(u.bookings_count != null ? { bookings_count: Number(u.bookings_count), next_booking: u.next_booking || null } : {}),
 });
+
+const getUserRow = (uid) =>
+  db.get(
+    `SELECT u.*, p.name AS plan_name, ap.name AS profile_name
+       FROM users u LEFT JOIN plans p ON p.id = u.plan_id LEFT JOIN access_profiles ap ON ap.id = u.profile_id WHERE u.id = ?`,
+    [uid],
+  );
+
+/**
+ * Traduz o pedido (profile_id ou role) em { role, profile_id } e confere se quem pede pode mudar o acesso.
+ * Só quem edita "Perfis de usuário" altera o acesso de alguém ao painel — editar Clientes não basta.
+ */
+async function resolveAccess(d, current, actor) {
+  let profileId;
+  if (d.profile_id !== undefined) profileId = d.profile_id;
+  else if (d.role === 'admin') profileId = current?.profile_id ? Number(current.profile_id) : (await adminProfileId());
+  else if (d.role === 'client') profileId = null;
+  else profileId = current?.profile_id == null ? null : Number(current.profile_id);
+
+  if (profileId && !(await db.get('SELECT id FROM access_profiles WHERE id = ?', [profileId]))) throw new HttpError(400, 'Perfil inválido.');
+  const next = { role: profileId ? 'admin' : 'client', profile_id: profileId ?? null };
+
+  const before = { role: current?.role ?? 'client', profile_id: current?.profile_id == null ? null : Number(current.profile_id) };
+  if (next.role !== before.role || next.profile_id !== before.profile_id) {
+    if (!hasAccess(actor.permissions, 'profiles', 'edit')) throw new HttpError(403, 'Seu perfil não permite alterar o acesso de usuários ao painel.');
+    if (current && Number(current.id) === actor.id) throw new HttpError(422, 'Você não pode alterar o seu próprio perfil de acesso.');
+  }
+  return next;
+}
+
+const adminProfileId = async () => Number((await db.get('SELECT id FROM access_profiles WHERE is_system = 1 ORDER BY id LIMIT 1')).id);
 
 router.get(
   '/users',
@@ -397,10 +451,10 @@ router.get(
     if (q.active) { where.push('u.active = ?'); params.push(q.active === 'true' ? 1 : 0); }
 
     const rows = await db.query(
-      `SELECT u.*, p.name AS plan_name,
+      `SELECT u.*, p.name AS plan_name, ap.name AS profile_name,
               (SELECT COUNT(*) FROM bookings b WHERE b.user_id = u.id AND b.status <> 'cancelled') AS bookings_count,
               (SELECT MIN(b.start_at) FROM bookings b WHERE b.user_id = u.id AND b.status IN ('pending','confirmed') AND b.start_at >= ?) AS next_booking
-         FROM users u LEFT JOIN plans p ON p.id = u.plan_id
+         FROM users u LEFT JOIN plans p ON p.id = u.plan_id LEFT JOIN access_profiles ap ON ap.id = u.profile_id
         WHERE ${where.join(' AND ')} ORDER BY u.name LIMIT 500`,
       params,
     );
@@ -412,7 +466,7 @@ router.get(
   '/users/:id',
   asyncHandler(async (req, res) => {
     const uid = Number(req.params.id);
-    const u = await db.get('SELECT u.*, p.name AS plan_name FROM users u LEFT JOIN plans p ON p.id = u.plan_id WHERE u.id = ?', [uid]);
+    const u = await getUserRow(uid);
     if (!u) throw new HttpError(404, 'Cliente não encontrado.');
     const rules = await getSettings();
     const now = nowLocal();
@@ -444,13 +498,13 @@ router.post(
     if (!d.password) throw new HttpError(400, 'Defina uma senha inicial (mín. 8 caracteres).');
     if (await db.get('SELECT id FROM users WHERE email = ?', [d.email])) throw new HttpError(409, 'Já existe um usuário com esse e-mail.');
     await assertPlanExists(d.plan_id);
+    const access = await resolveAccess(d, null, req.user);
     const r = await db.run(
-      `INSERT INTO users (name, email, password, role, phone, document, company, plan_id, notes, active, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [d.name, d.email, await bcrypt.hash(d.password, 10), d.role, d.phone, d.document, d.company, d.plan_id ?? null, d.notes, d.active ? 1 : 0, nowStamp(), nowStamp()],
+      `INSERT INTO users (name, email, password, role, profile_id, phone, document, company, plan_id, notes, active, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [d.name, d.email, await bcrypt.hash(d.password, 10), access.role, access.profile_id, d.phone, d.document, d.company, d.plan_id ?? null, d.notes, d.active ? 1 : 0, nowStamp(), nowStamp()],
     );
-    const u = await db.get('SELECT u.*, p.name AS plan_name FROM users u LEFT JOIN plans p ON p.id = u.plan_id WHERE u.id = ?', [r.insertId]);
-    res.status(201).json({ user: presentUser(u) });
+    res.status(201).json({ user: presentUser(await getUserRow(r.insertId)) });
   }),
 );
 
@@ -465,18 +519,22 @@ router.put(
     if (clash) throw new HttpError(409, 'Já existe um usuário com esse e-mail.');
     await assertPlanExists(d.plan_id);
 
-    if (uid === req.user.id && (d.role !== 'admin' || !d.active)) {
-      throw new HttpError(422, 'Você não pode remover seu próprio acesso de administrador.');
+    if (uid === req.user.id && !d.active) {
+      throw new HttpError(422, 'Você não pode desativar a própria conta.');
+    }
+    const access = await resolveAccess(d, current, req.user);
+    // Quem só edita Clientes não pode tomar a conta de alguém com acesso ao painel (trocar senha ou e-mail).
+    if (current.role === 'admin' && uid !== req.user.id && !hasAccess(req.user.permissions, 'profiles', 'edit') && (d.password || d.email !== current.email)) {
+      throw new HttpError(403, 'Só quem gerencia perfis de usuário pode alterar o e-mail ou a senha de um usuário do painel.');
     }
 
     await db.run(
-      `UPDATE users SET name = ?, email = ?, role = ?, phone = ?, document = ?, company = ?, plan_id = ?, notes = ?, active = ?, updated_at = ? WHERE id = ?`,
-      [d.name, d.email, d.role, d.phone, d.document, d.company, d.plan_id ?? null, d.notes, d.active ? 1 : 0, nowStamp(), uid],
+      `UPDATE users SET name = ?, email = ?, role = ?, profile_id = ?, phone = ?, document = ?, company = ?, plan_id = ?, notes = ?, active = ?, updated_at = ? WHERE id = ?`,
+      [d.name, d.email, access.role, access.profile_id, d.phone, d.document, d.company, d.plan_id ?? null, d.notes, d.active ? 1 : 0, nowStamp(), uid],
     );
     if (d.password) await db.run('UPDATE users SET password = ? WHERE id = ?', [await bcrypt.hash(d.password, 10), uid]);
 
-    const u = await db.get('SELECT u.*, p.name AS plan_name FROM users u LEFT JOIN plans p ON p.id = u.plan_id WHERE u.id = ?', [uid]);
-    res.json({ user: presentUser(u) });
+    res.json({ user: presentUser(await getUserRow(uid)) });
   }),
 );
 
@@ -485,6 +543,10 @@ router.delete(
   asyncHandler(async (req, res) => {
     const uid = Number(req.params.id);
     if (uid === req.user.id) throw new HttpError(422, 'Você não pode excluir a própria conta.');
+    const target = await db.get('SELECT role FROM users WHERE id = ?', [uid]);
+    if (target?.role === 'admin' && !hasAccess(req.user.permissions, 'profiles', 'edit')) {
+      throw new HttpError(403, 'Só quem gerencia perfis de usuário pode excluir um usuário do painel.');
+    }
     const used = await db.get('SELECT COUNT(*) AS n FROM bookings WHERE user_id = ?', [uid]);
     if (Number(used.n) > 0) throw new HttpError(409, 'Este cliente tem reservas no histórico. Desative a conta em vez de excluir.');
     await db.run('DELETE FROM users WHERE id = ?', [uid]);
@@ -497,6 +559,138 @@ router.post(
   asyncHandler(async (req, res) => {
     const { month } = parse(z.object({ month: z.string().regex(/^\d{4}-\d{2}$/) }), req.body);
     res.json({ updated: await payInvoice({ userId: Number(req.params.id), month, method: 'outro' }) });
+  }),
+);
+
+/* ---------------- perfis de usuário (acesso ao painel) ---------------- */
+
+const profileInput = z.object({
+  name: z.string().trim().min(2, 'Informe o nome do perfil').max(60),
+  description: z.string().trim().max(200).optional().default(''),
+  permissions: z.record(z.string(), z.enum(LEVELS)),
+});
+
+const presentProfile = (p) => ({
+  id: Number(p.id),
+  name: p.name,
+  description: p.description,
+  is_system: Boolean(Number(p.is_system)),
+  permissions: normalizePermissions(p.permissions),
+  users_count: Number(p.users_count ?? 0),
+});
+
+const profileRow = (pid) =>
+  db.get('SELECT p.*, (SELECT COUNT(*) FROM users u WHERE u.profile_id = p.id) AS users_count FROM access_profiles p WHERE p.id = ?', [pid]);
+
+function parseProfile(body) {
+  const d = parse(profileInput, body);
+  const permissions = normalizePermissions(d.permissions);
+  if (!canEnterPanel(permissions)) throw new HttpError(422, 'Libere ao menos uma área do painel para este perfil.');
+  return { ...d, permissions };
+}
+
+router.get(
+  '/profiles',
+  asyncHandler(async (_req, res) => {
+    const rows = await db.query(
+      'SELECT p.*, (SELECT COUNT(*) FROM users u WHERE u.profile_id = p.id) AS users_count FROM access_profiles p ORDER BY p.is_system DESC, p.name',
+    );
+    res.json({ profiles: rows.map(presentProfile), modules: MODULES, levels: LEVELS });
+  }),
+);
+
+router.post(
+  '/profiles',
+  asyncHandler(async (req, res) => {
+    const d = parseProfile(req.body);
+    if (await db.get('SELECT id FROM access_profiles WHERE name = ?', [d.name])) throw new HttpError(409, 'Já existe um perfil com esse nome.');
+    const r = await db.run(
+      'INSERT INTO access_profiles (name, description, permissions, is_system, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?)',
+      [d.name, d.description, JSON.stringify(d.permissions), nowStamp(), nowStamp()],
+    );
+    res.status(201).json({ profile: presentProfile(await profileRow(r.insertId)) });
+  }),
+);
+
+router.put(
+  '/profiles/:id',
+  asyncHandler(async (req, res) => {
+    const pid = Number(req.params.id);
+    const current = await profileRow(pid);
+    if (!current) throw new HttpError(404, 'Perfil não encontrado.');
+    if (Number(current.is_system)) throw new HttpError(403, 'O perfil Administrador é fixo e não pode ser alterado.');
+    const d = parseProfile(req.body);
+    if (await db.get('SELECT id FROM access_profiles WHERE name = ? AND id <> ?', [d.name, pid])) throw new HttpError(409, 'Já existe um perfil com esse nome.');
+    if (req.user.profile_id === pid && d.permissions.profiles !== 'edit') {
+      throw new HttpError(422, 'Este é o seu perfil: mantenha "Perfis de usuário" em Editar para não perder o acesso a esta tela.');
+    }
+    await db.run('UPDATE access_profiles SET name = ?, description = ?, permissions = ?, updated_at = ? WHERE id = ?', [
+      d.name, d.description, JSON.stringify(d.permissions), nowStamp(), pid,
+    ]);
+    res.json({ profile: presentProfile(await profileRow(pid)) });
+  }),
+);
+
+router.delete(
+  '/profiles/:id',
+  asyncHandler(async (req, res) => {
+    const pid = Number(req.params.id);
+    const current = await profileRow(pid);
+    if (!current) throw new HttpError(404, 'Perfil não encontrado.');
+    if (Number(current.is_system)) throw new HttpError(403, 'O perfil Administrador é fixo e não pode ser excluído.');
+    if (Number(current.users_count) > 0) throw new HttpError(409, 'Há usuários com este perfil. Mude o perfil deles antes de excluir.');
+    await db.run('DELETE FROM access_profiles WHERE id = ?', [pid]);
+    res.json({ ok: true });
+  }),
+);
+
+/** Todos os usuários (clientes e equipe) com o perfil de acesso de cada um. */
+router.get(
+  '/profiles-users',
+  asyncHandler(async (req, res) => {
+    const q = parse(z.object({ q: z.string().trim().max(80).optional(), profile_id: z.string().max(10).optional() }), req.query);
+    const where = ['u.active = 1'];
+    const params = [];
+    if (q.q) {
+      where.push('(u.name LIKE ? OR u.email LIKE ?)');
+      params.push(`%${q.q}%`, `%${q.q}%`);
+    }
+    if (q.profile_id === 'none') where.push('u.profile_id IS NULL');
+    else if (q.profile_id && /^\d+$/.test(q.profile_id)) { where.push('u.profile_id = ?'); params.push(Number(q.profile_id)); }
+    const rows = await db.query(
+      `SELECT u.id, u.name, u.email, u.role, u.profile_id, u.last_login_at, ap.name AS profile_name
+         FROM users u LEFT JOIN access_profiles ap ON ap.id = u.profile_id
+        WHERE ${where.join(' AND ')} ORDER BY (u.profile_id IS NULL), u.name LIMIT 500`,
+      params,
+    );
+    res.json({
+      users: rows.map((u) => ({
+        id: Number(u.id), name: u.name, email: u.email, role: u.role, last_login_at: u.last_login_at,
+        profile_id: u.profile_id == null ? null : Number(u.profile_id), profile_name: u.profile_name ?? null,
+      })),
+    });
+  }),
+);
+
+router.put(
+  '/profiles-users/:id',
+  asyncHandler(async (req, res) => {
+    const uid = Number(req.params.id);
+    const { profile_id } = parse(z.object({ profile_id: z.coerce.number().int().positive().nullable() }), req.body);
+    const current = await db.get('SELECT id, role, profile_id FROM users WHERE id = ?', [uid]);
+    if (!current) throw new HttpError(404, 'Usuário não encontrado.');
+    const access = await resolveAccess({ profile_id }, current, req.user);
+    await db.run('UPDATE users SET role = ?, profile_id = ?, updated_at = ? WHERE id = ?', [access.role, access.profile_id, nowStamp(), uid]);
+    const u = await db.get(
+      'SELECT u.id, u.name, u.email, u.role, u.profile_id, u.last_login_at, ap.name AS profile_name FROM users u LEFT JOIN access_profiles ap ON ap.id = u.profile_id WHERE u.id = ?',
+      [uid],
+    );
+    res.json({
+      user: {
+        id: Number(u.id), name: u.name, email: u.email, role: u.role, last_login_at: u.last_login_at,
+        profile_id: u.profile_id == null ? null : Number(u.profile_id), profile_name: u.profile_name ?? null,
+      },
+    });
   }),
 );
 

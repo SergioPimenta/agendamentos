@@ -1,6 +1,6 @@
 import express from 'express';
 import { z } from 'zod';
-import { requireAdmin, verifyToken } from '../middleware/auth.js';
+import { requireAdmin, requireModule, verifyToken } from '../middleware/auth.js';
 import {
   PAYMENT_METHODS,
   createEntries,
@@ -29,6 +29,8 @@ import { DATE_RE, isValidDate, nowLocal } from '../utils/time.js';
 
 const router = express.Router();
 router.use(verifyToken, requireAdmin);
+// A conexão com o Pagar.me também é testada na tela de Configurações.
+router.use((req, res, next) => requireModule(req.path.startsWith('/gateway') ? ['finance', 'settings'] : ['finance'])(req, res, next));
 
 const date = z.string().regex(DATE_RE, 'Data inválida').refine(isValidDate, 'Data inválida');
 const month = z.string().regex(/^\d{4}-\d{2}$/, 'Mês inválido');

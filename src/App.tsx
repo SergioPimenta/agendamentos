@@ -5,6 +5,7 @@ import { AppShell } from './components/layout/AppShell';
 import { PageLoader } from './components/ui/Feedback';
 import { Button, LinkButton } from './components/ui/Button';
 import { useAuth } from './contexts/AuthContext';
+import type { ModuleKey } from './types';
 import { PublicShell } from './components/layout/PublicShell';
 import PublicHome from './pages/public/PublicHome';
 import Login from './pages/auth/Login';
@@ -24,6 +25,8 @@ const AdminDashboard = lazy(() => import('./pages/admin/Dashboard'));
 const AdminAgenda = lazy(() => import('./pages/admin/Agenda'));
 const AdminBookings = lazy(() => import('./pages/admin/Bookings'));
 const AdminClients = lazy(() => import('./pages/admin/Clients'));
+const ClientsLayout = lazy(() => import('./pages/admin/ClientsLayout'));
+const AdminProfiles = lazy(() => import('./pages/admin/Profiles'));
 const AdminRooms = lazy(() => import('./pages/admin/Rooms'));
 const AdminPlans = lazy(() => import('./pages/admin/Plans'));
 const AdminBlocks = lazy(() => import('./pages/admin/Blocks'));
@@ -44,6 +47,22 @@ function RequireAuth({ role }: { role?: 'admin' }) {
   if (!user) return <Navigate to="/login" state={{ from: location.pathname + location.search }} replace />;
   if (role && user.role !== role) return <Navigate to="/app" replace />;
   return <Outlet />;
+}
+
+/** Primeira tela do painel que cada área libera, na ordem do menu. */
+const ADMIN_HOME: [ModuleKey, string][] = [
+  ['dashboard', '/admin'], ['agenda', '/admin/agenda'], ['bookings', '/admin/reservas'], ['clients', '/admin/clientes'],
+  ['rooms', '/admin/salas'], ['plans', '/admin/planos'], ['blocks', '/admin/bloqueios'], ['finance', '/admin/financeiro'],
+  ['reports', '/admin/relatorios'], ['qrcodes', '/admin/qr-codes'], ['email_templates', '/admin/modelos-de-email'],
+  ['settings', '/admin/configuracoes'], ['profiles', '/admin/clientes/perfis'],
+];
+
+/** Barra quem não tem acesso à área e leva para a primeira tela que o perfil libera. */
+function RequireModule({ module }: { module: ModuleKey }) {
+  const { can } = useAuth();
+  if (can(module)) return <Outlet />;
+  const home = ADMIN_HOME.find(([m]) => can(m));
+  return <Navigate to={home ? home[1] : '/app'} replace />;
 }
 
 /**
@@ -112,24 +131,29 @@ export default function App() {
 
           <Route element={<RequireAuth role="admin" />}>
             <Route path="/admin" element={<AppShell variant="admin" />}>
-              <Route index element={<AdminDashboard />} />
-              <Route path="agenda" element={<AdminAgenda />} />
-              <Route path="reservas" element={<AdminBookings />} />
-              <Route path="clientes" element={<AdminClients />} />
-              <Route path="salas" element={<AdminRooms />} />
-              <Route path="planos" element={<AdminPlans />} />
-              <Route path="bloqueios" element={<AdminBlocks />} />
-              <Route path="financeiro" element={<FinanceLayout />}>
-                <Route index element={<FinanceOverview />} />
-                <Route path="receber" element={<FinanceReceivables />} />
-                <Route path="pagar" element={<FinancePayables />} />
-                <Route path="fluxo" element={<FinanceCashFlow />} />
-                <Route path="online" element={<FinanceOnline />} />
+              <Route element={<RequireModule module="dashboard" />}><Route index element={<AdminDashboard />} /></Route>
+              <Route element={<RequireModule module="agenda" />}><Route path="agenda" element={<AdminAgenda />} /></Route>
+              <Route element={<RequireModule module="bookings" />}><Route path="reservas" element={<AdminBookings />} /></Route>
+              <Route path="clientes" element={<ClientsLayout />}>
+                <Route element={<RequireModule module="clients" />}><Route index element={<AdminClients />} /></Route>
+                <Route element={<RequireModule module="profiles" />}><Route path="perfis" element={<AdminProfiles />} /></Route>
               </Route>
-              <Route path="relatorios" element={<AdminReports />} />
-              <Route path="qr-codes" element={<AdminQrCodes />} />
-              <Route path="modelos-de-email" element={<AdminEmailTemplates />} />
-              <Route path="configuracoes" element={<AdminSettings />} />
+              <Route element={<RequireModule module="rooms" />}><Route path="salas" element={<AdminRooms />} /></Route>
+              <Route element={<RequireModule module="plans" />}><Route path="planos" element={<AdminPlans />} /></Route>
+              <Route element={<RequireModule module="blocks" />}><Route path="bloqueios" element={<AdminBlocks />} /></Route>
+              <Route element={<RequireModule module="finance" />}>
+                <Route path="financeiro" element={<FinanceLayout />}>
+                  <Route index element={<FinanceOverview />} />
+                  <Route path="receber" element={<FinanceReceivables />} />
+                  <Route path="pagar" element={<FinancePayables />} />
+                  <Route path="fluxo" element={<FinanceCashFlow />} />
+                  <Route path="online" element={<FinanceOnline />} />
+                </Route>
+              </Route>
+              <Route element={<RequireModule module="reports" />}><Route path="relatorios" element={<AdminReports />} /></Route>
+              <Route element={<RequireModule module="qrcodes" />}><Route path="qr-codes" element={<AdminQrCodes />} /></Route>
+              <Route element={<RequireModule module="email_templates" />}><Route path="modelos-de-email" element={<AdminEmailTemplates />} /></Route>
+              <Route element={<RequireModule module="settings" />}><Route path="configuracoes" element={<AdminSettings />} /></Route>
             </Route>
           </Route>
 

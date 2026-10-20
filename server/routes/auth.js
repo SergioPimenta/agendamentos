@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { config } from '../config.js';
 import { db } from '../db/index.js';
 import { signToken, verifyToken } from '../middleware/auth.js';
+import { permissionsFor } from '../services/access.js';
 import { getSettings } from '../services/settings.js';
 import { HttpError, asyncHandler, parse, rateLimit } from '../utils/http.js';
 import { sendTemplated } from '../services/emailTemplates.js';
@@ -20,8 +21,9 @@ const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, key: (req) =>
 export async function publicUser(id) {
   const u = await db.get(
     `SELECT u.id, u.name, u.email, u.role, u.phone, u.document, u.company, u.plan_id, p.name AS plan_name,
-            p.included_minutes AS plan_included_minutes, p.unlimited AS plan_unlimited
-       FROM users u LEFT JOIN plans p ON p.id = u.plan_id WHERE u.id = ?`,
+            p.included_minutes AS plan_included_minutes, p.unlimited AS plan_unlimited,
+            ap.name AS profile_name, ap.permissions AS profile_permissions
+       FROM users u LEFT JOIN plans p ON p.id = u.plan_id LEFT JOIN access_profiles ap ON ap.id = u.profile_id WHERE u.id = ?`,
     [id],
   );
   return {
@@ -29,6 +31,8 @@ export async function publicUser(id) {
     name: u.name,
     email: u.email,
     role: u.role,
+    profile_name: u.role === 'admin' ? (u.profile_name ?? 'Administrador') : null,
+    permissions: permissionsFor(u),
     phone: u.phone,
     document: u.document,
     company: u.company,

@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, ApiError } from '../services/api';
-import type { PublicSettings, User } from '../types';
+import type { AccessLevel, ModuleKey, PublicSettings, User } from '../types';
 
 interface AuthContextType {
   user: User | null;
@@ -12,7 +12,11 @@ interface AuthContextType {
   login: (token: string, user: User) => void;
   logout: () => void;
   setUser: (user: User) => void;
+  /** O perfil do usuário alcança esse nível na área do painel? (`view` é o padrão) */
+  can: (module: ModuleKey, level?: Exclude<AccessLevel, 'none'>) => boolean;
 }
+
+const RANK: Record<AccessLevel, number> = { none: 0, view: 1, edit: 2 };
 
 const AuthContext = createContext<AuthContextType>({} as AuthContextType);
 
@@ -63,6 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       retry: () => setAttempt((n) => n + 1),
       logout,
       setUser: setUserState,
+      can: (module, level = 'view') => RANK[user?.permissions?.[module] ?? 'none'] >= RANK[level],
       login: (token, u) => {
         localStorage.setItem('token', token);
         setUserState(u);

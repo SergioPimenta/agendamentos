@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { config } from '../config.js';
 import { db } from './index.js';
 import { nowStamp, addDays, nowLocal, weekdayOf, toMin } from '../utils/time.js';
+import { DEFAULT_PROFILES } from '../services/access.js';
 
 const PK = { mysql: 'INT AUTO_INCREMENT PRIMARY KEY', postgres: 'SERIAL PRIMARY KEY', sqlite: 'INTEGER PRIMARY KEY AUTOINCREMENT' };
 const pk = () => PK[db.dialect];
@@ -226,6 +227,22 @@ const migrations = [
     id: '007_booking_guests',
     statements: () => [`ALTER TABLE bookings ADD COLUMN guests TEXT NULL`],
   },
+  {
+    // Perfis de acesso ao painel administrativo (nível por módulo) e o perfil de cada usuário.
+    id: '008_access_profiles',
+    statements: () => [
+      `CREATE TABLE IF NOT EXISTS access_profiles (
+        id ${pk()},
+        name VARCHAR(60) NOT NULL UNIQUE,
+        description VARCHAR(200) NOT NULL DEFAULT '',
+        permissions TEXT NOT NULL,
+        is_system INT NOT NULL DEFAULT 0,
+        created_at VARCHAR(19) NOT NULL,
+        updated_at VARCHAR(19) NOT NULL
+      )${tail()}`,
+      `ALTER TABLE users ADD COLUMN profile_id INT NULL`,
+    ],
+  },
 ];
 
 export async function migrate() {
@@ -339,12 +356,25 @@ export async function seed() {
     }
   }
 
+  for (const p of DEFAULT_PROFILES) {
+    const has = await db.get('SELECT id FROM access_profiles WHERE name = ?', [p.name]);
+    if (!has) {
+      await db.run(
+        'INSERT INTO access_profiles (name, description, permissions, is_system, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+        [p.name, p.description, JSON.stringify(p.permissions), p.is_system, nowStamp(), nowStamp()],
+      );
+    }
+  }
+  const fullProfile = await db.get('SELECT id FROM access_profiles WHERE is_system = 1 ORDER BY id LIMIT 1');
+  // Quem já era administrador antes dos perfis passa a ter o perfil "Administrador" (acesso total).
+  await db.run("UPDATE users SET profile_id = ? WHERE role = 'admin' AND profile_id IS NULL", [fullProfile.id]);
+
   const admin = await db.get('SELECT id FROM users WHERE role = ? LIMIT 1', ['admin']);
   if (!admin) {
     const password = config.admin.password || (config.isProd ? crypto.randomBytes(9).toString('base64url') : 'admin123');
     await db.run(
-      `INSERT INTO users (name, email, password, role, created_at, updated_at) VALUES (?, ?, ?, 'admin', ?, ?)`,
-      [config.admin.name, config.admin.email, await bcrypt.hash(password, 10), nowStamp(), nowStamp()],
+      `INSERT INTO users (name, email, password, role, profile_id, created_at, updated_at) VALUES (?, ?, ?, 'admin', ?, ?, ?)`,
+      [config.admin.name, config.admin.email, await bcrypt.hash(password, 10), fullProfile.id, nowStamp(), nowStamp()],
     );
     if (config.isProd && !config.admin.password) {
       console.log(`[seed] Administrador criado: ${config.admin.email} / senha temporária: ${password} (troque após o primeiro acesso)`);

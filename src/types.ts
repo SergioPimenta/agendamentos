@@ -13,11 +13,41 @@ export interface Plan {
   users_count?: number;
 }
 
+/** Nível de acesso a uma área do painel: sem acesso, só consulta ou consulta e alteração. */
+export type AccessLevel = 'none' | 'view' | 'edit';
+export type ModuleKey =
+  | 'dashboard' | 'agenda' | 'bookings' | 'clients' | 'rooms' | 'plans' | 'blocks' | 'finance'
+  | 'reports' | 'qrcodes' | 'email_templates' | 'settings' | 'profiles';
+export type Permissions = Record<ModuleKey, AccessLevel>;
+
+export interface AccessModule { key: ModuleKey; label: string; description: string }
+
+export interface AccessProfile {
+  id: number;
+  name: string;
+  description: string;
+  is_system: boolean;
+  permissions: Permissions;
+  users_count: number;
+}
+
+export interface ProfileUser {
+  id: number;
+  name: string;
+  email: string;
+  role: Role;
+  profile_id: number | null;
+  profile_name: string | null;
+  last_login_at: string | null;
+}
+
 export interface User {
   id: number;
   name: string;
   email: string;
   role: Role;
+  profile_name?: string | null;
+  permissions: Permissions;
   phone: string;
   document: string;
   company: string;
@@ -204,6 +234,8 @@ export interface Client {
   name: string;
   email: string;
   role: Role;
+  profile_id: number | null;
+  profile_name: string | null;
   phone: string;
   document: string;
   company: string;

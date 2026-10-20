@@ -7,16 +7,19 @@ import { Badge, EmptyState, ErrorState, Skeleton, useConfirm, useToast } from '.
 import { Input, Select, SearchInput, Switch, Textarea } from '../../components/ui/Form';
 import { Modal } from '../../components/ui/Modal';
 import { Avatar, DataTable, PageHeader, Td, Th } from '../../components/ui/Misc';
+import { useAuth } from '../../contexts/AuthContext';
 import { useApi, useDebounced } from '../../hooks/useApi';
 import { fmtDateFull, fmtDuration, fmtMoney, fmtMonth, todayStr } from '../../lib/format';
 import { api } from '../../services/api';
-import type { Booking, Client, Plan, Statement } from '../../types';
+import type { AccessProfile, Booking, Client, Plan, Statement } from '../../types';
 
-const emptyForm = { name: '', email: '', password: '', role: 'client', phone: '', document: '', company: '', plan_id: '', notes: '', active: true };
+const emptyForm = { name: '', email: '', password: '', profile_id: '', phone: '', document: '', company: '', plan_id: '', notes: '', active: true };
 
 export default function AdminClients() {
   const toast = useToast();
   const confirm = useConfirm();
+  const { can } = useAuth();
+  const canEditClients = can('clients', 'edit');
   const [text, setText] = useState('');
   const q = useDebounced(text, 300);
   const [plan, setPlan] = useState('');
@@ -26,6 +29,9 @@ export default function AdminClients() {
 
   const list = useApi(() => api.get<{ users: Client[] }>('/admin/users', { q, plan_id: plan, active }), [q, plan, active]);
   const plans = useApi(() => api.get<{ plans: Plan[] }>('/admin/plans'), []);
+  // O perfil de acesso só é escolhido aqui por quem gerencia Perfis de usuário.
+  const canPickProfile = can('profiles', 'edit');
+  const profiles = useApi(() => (canPickProfile ? api.get<{ profiles: AccessProfile[] }>('/admin/profiles') : Promise.resolve(null)), [canPickProfile]);
 
   return (
     <>
@@ -33,7 +39,7 @@ export default function AdminClients() {
         eyebrow="Pessoas"
         title="Clientes"
         description="Quem usa o espaço, em qual plano e quando reservou pela última vez."
-        actions={<Button icon={<Plus size={16} />} onClick={() => setForm({})}>Novo cliente</Button>}
+        actions={canEditClients && <Button icon={<Plus size={16} />} onClick={() => setForm({})}>Novo cliente</Button>}
       />
 
       <div className="mb-5 grid gap-3 sm:grid-cols-[1.6fr_1fr_1fr]">
@@ -62,7 +68,7 @@ export default function AdminClients() {
                   <div className="flex items-center gap-3">
                     <Avatar name={c.name} size={36} />
                     <div className="min-w-0">
-                      <p className="truncate font-medium">{c.name} {c.role === 'admin' && <Badge tone="ink" className="ml-1">admin</Badge>}</p>
+                      <p className="truncate font-medium">{c.name} {c.role === 'admin' && <Badge tone="ink" className="ml-1">{c.profile_name ?? 'admin'}</Badge>}</p>
                       <p className="truncate text-[12px] text-stone">{c.company || c.email}</p>
                     </div>
                   </div>
@@ -88,6 +94,7 @@ export default function AdminClients() {
         open={!!form}
         client={form?.client}
         plans={plans.data?.plans ?? []}
+        profiles={canPickProfile ? (profiles.data?.profiles ?? []) : null}
         onClose={() => setForm(null)}
         onSaved={() => { setForm(null); list.reload(); }}
         onDelete={async (c) => {
@@ -107,10 +114,11 @@ export default function AdminClients() {
   );
 }
 
-function ClientForm({ open, client, plans, onClose, onSaved, onDelete }: {
-  open: boolean; client?: Client; plans: Plan[]; onClose: () => void; onSaved: () => void; onDelete: (c: Client) => void;
+function ClientForm({ open, client, plans, profiles, onClose, onSaved, onDelete }: {
+  open: boolean; client?: Client; plans: Plan[]; profiles: AccessProfile[] | null; onClose: () => void; onSaved: () => void; onDelete: (c: Client) => void;
 }) {
   const toast = useToast();
+  const { user: me } = useAuth();
   const [f, setF] = useState(emptyForm);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -123,7 +131,7 @@ function ClientForm({ open, client, plans, onClose, onSaved, onDelete }: {
     if (open) {
       setError('');
       setF(client ? {
-        name: client.name, email: client.email, password: '', role: client.role, phone: client.phone, document: client.document,
+        name: client.name, email: client.email, password: '', profile_id: client.profile_id ? String(client.profile_id) : '', phone: client.phone, document: client.document,
         company: client.company, plan_id: client.plan_id ? String(client.plan_id) : '', notes: client.notes, active: client.active,
       } : emptyForm);
     }
@@ -136,7 +144,14 @@ function ClientForm({ open, client, plans, onClose, onSaved, onDelete }: {
     setError('');
     setSaving(true);
     try {
-      const body = { ...f, plan_id: f.plan_id ? Number(f.plan_id) : null, password: f.password || undefined };
+      const { profile_id, ...rest } = f;
+      const body = {
+        ...rest,
+        plan_id: f.plan_id ? Number(f.plan_id) : null,
+        password: f.password || undefined,
+        // Sem permissão para gerenciar perfis, o acesso ao painel fica como está.
+        ...(profiles ? { profile_id: profile_id ? Number(profile_id) : null } : {}),
+      };
       if (client) await api.put(`/admin/users/${client.id}`, body);
       else await api.post('/admin/users', body);
       toast.success(client ? 'Cliente atualizado.' : 'Cliente criado.');
@@ -174,10 +189,23 @@ function ClientForm({ open, client, plans, onClose, onSaved, onDelete }: {
           <option value="">Sem plano</option>
           {plans.filter((p) => p.active || String(p.id) === f.plan_id).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </Select>
-        <Select label="Perfil de acesso" value={f.role} onChange={set('role')}>
-          <option value="client">Cliente</option>
-          <option value="admin">Administrador</option>
-        </Select>
+        {profiles ? (
+          <Select
+            label="Perfil de acesso ao painel"
+            value={f.profile_id}
+            onChange={set('profile_id')}
+            disabled={client?.id === me?.id}
+            hint={client?.id === me?.id ? 'Você não pode alterar o próprio perfil.' : 'Defina o que a pessoa vê e altera no painel.'}
+          >
+            <option value="">Sem acesso ao painel (cliente)</option>
+            {profiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </Select>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[12px] font-semibold tracking-wide text-ink">Acesso ao painel</span>
+            <span className="py-3 text-[14px] text-stone">{client?.profile_name ?? (client?.role === 'admin' ? 'Administrador' : 'Somente cliente')}</span>
+          </div>
+        )}
         <div className="flex items-end pb-2"><Switch checked={f.active} onChange={(v) => setF((s) => ({ ...s, active: v }))} label="Conta ativa" description="Desativada, não consegue entrar." /></div>
         <Textarea containerClassName="sm:col-span-2" label="Observações internas" value={f.notes} onChange={set('notes')} />
       </form>
@@ -194,6 +222,8 @@ interface Detail {
 
 function ClientDetail({ id, onClose, onEdit, onChanged }: { id: number | null; onClose: () => void; onEdit: (c: Client) => void; onChanged: () => void }) {
   const toast = useToast();
+  const { can } = useAuth();
+  const canEdit = can('clients', 'edit');
   const [month] = useState(todayStr().slice(0, 7));
   const [selected, setSelected] = useState<Booking | null>(null);
   const q = useApi(() => (id ? api.get<Detail>(`/admin/users/${id}`, { month }) : Promise.resolve(null)), [id, month]);
@@ -218,7 +248,7 @@ function ClientDetail({ id, onClose, onEdit, onChanged }: { id: number | null; o
         size="lg"
         title={d?.user.name ?? 'Cliente'}
         subtitle={d?.user.company || d?.user.email}
-        footer={<>{d && <Button variant="secondary" icon={<Pencil size={15} />} onClick={() => onEdit(d.user)}>Editar</Button>}<Button variant="ghost" onClick={onClose}>Fechar</Button></>}
+        footer={<>{d && canEdit && <Button variant="secondary" icon={<Pencil size={15} />} onClick={() => onEdit(d.user)}>Editar</Button>}<Button variant="ghost" onClick={onClose}>Fechar</Button></>}
       >
         {!d ? <Skeleton className="h-[260px]" /> : (
           <div className="flex flex-col gap-7">
@@ -242,7 +272,7 @@ function ClientDetail({ id, onClose, onEdit, onChanged }: { id: number | null; o
             <div>
               <div className="mb-3 flex items-center justify-between">
                 <h3 className="font-display text-[17px] font-medium text-ink">Fatura de {fmtMonth(d.statement.month)}</h3>
-                {d.statement.totals.pending_cents > 0 && <Button size="sm" variant="soft" onClick={payMonth}>Marcar {fmtMoney(d.statement.totals.pending_cents)} como pago</Button>}
+                {canEdit && d.statement.totals.pending_cents > 0 && <Button size="sm" variant="soft" onClick={payMonth}>Marcar {fmtMoney(d.statement.totals.pending_cents)} como pago</Button>}
               </div>
               <p className="text-[13.5px] text-stone">
                 {d.statement.totals.bookings} reservas · {fmtDuration(d.statement.totals.minutes)} · total {fmtMoney(d.statement.totals.amount_cents)}

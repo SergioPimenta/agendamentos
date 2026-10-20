@@ -8,10 +8,12 @@ import { useAuth } from '../../contexts/AuthContext';
 import { cn } from '../../lib/cn';
 import { BrandLogo } from '../brand/brand';
 import { CanopyMotif } from '../brand/harmonizeUi';
+import type { ModuleKey } from '../../types';
 import { InstallAppButton } from '../pwa/InstallApp';
 import { Avatar } from '../ui/Misc';
 
-interface NavItem { to: string; label: string; icon: ReactNode; end?: boolean }
+/** `module`: o item só aparece para quem tem acesso (ao menos de consulta) a uma dessas áreas. */
+interface NavItem { to: string; label: string; icon: ReactNode; end?: boolean; module?: ModuleKey | ModuleKey[] }
 
 const clientNav: NavItem[] = [
   { to: '/app', label: 'Início', icon: <Leaf size={18} />, end: true },
@@ -24,26 +26,28 @@ const clientNav: NavItem[] = [
 ];
 
 const adminNav: NavItem[] = [
-  { to: '/admin', label: 'Painel', icon: <LayoutDashboard size={18} />, end: true },
-  { to: '/admin/agenda', label: 'Agenda', icon: <CalendarDays size={18} /> },
-  { to: '/admin/reservas', label: 'Reservas', icon: <ClipboardList size={18} /> },
-  { to: '/admin/clientes', label: 'Clientes', icon: <Users size={18} /> },
-  { to: '/admin/salas', label: 'Salas', icon: <DoorOpen size={18} /> },
-  { to: '/admin/planos', label: 'Planos', icon: <Tags size={18} /> },
-  { to: '/admin/bloqueios', label: 'Bloqueios', icon: <ShieldBan size={18} /> },
-  { to: '/admin/financeiro', label: 'Financeiro', icon: <Wallet size={18} /> },
-  { to: '/admin/relatorios', label: 'Relatórios', icon: <BarChart3 size={18} /> },
-  { to: '/admin/qr-codes', label: 'QR das salas', icon: <QrCode size={18} /> },
-  { to: '/admin/modelos-de-email', label: 'Modelos de e-mail', icon: <Mail size={18} /> },
-  { to: '/admin/configuracoes', label: 'Configurações', icon: <Settings size={18} /> },
+  { to: '/admin', label: 'Painel', icon: <LayoutDashboard size={18} />, end: true, module: 'dashboard' },
+  { to: '/admin/agenda', label: 'Agenda', icon: <CalendarDays size={18} />, module: 'agenda' },
+  { to: '/admin/reservas', label: 'Reservas', icon: <ClipboardList size={18} />, module: 'bookings' },
+  { to: '/admin/clientes', label: 'Clientes', icon: <Users size={18} />, module: ['clients', 'profiles'] },
+  { to: '/admin/salas', label: 'Salas', icon: <DoorOpen size={18} />, module: 'rooms' },
+  { to: '/admin/planos', label: 'Planos', icon: <Tags size={18} />, module: 'plans' },
+  { to: '/admin/bloqueios', label: 'Bloqueios', icon: <ShieldBan size={18} />, module: 'blocks' },
+  { to: '/admin/financeiro', label: 'Financeiro', icon: <Wallet size={18} />, module: 'finance' },
+  { to: '/admin/relatorios', label: 'Relatórios', icon: <BarChart3 size={18} />, module: 'reports' },
+  { to: '/admin/qr-codes', label: 'QR das salas', icon: <QrCode size={18} />, module: 'qrcodes' },
+  { to: '/admin/modelos-de-email', label: 'Modelos de e-mail', icon: <Mail size={18} />, module: 'email_templates' },
+  { to: '/admin/configuracoes', label: 'Configurações', icon: <Settings size={18} />, module: 'settings' },
 ];
 
 export function AppShell({ variant }: { variant: 'client' | 'admin' }) {
-  const { user, logout } = useAuth();
+  const { user, logout, can } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [open, setOpen] = useState(false);
-  const items = variant === 'admin' ? adminNav : clientNav;
+  const items = variant === 'admin'
+    ? adminNav.filter((i) => !i.module || [i.module].flat().some((m) => can(m)))
+    : clientNav;
 
   useEffect(() => setOpen(false), [location.pathname]);
 
@@ -105,7 +109,7 @@ export function AppShell({ variant }: { variant: 'client' | 'admin' }) {
           <Avatar name={user?.name ?? ''} size={38} className="bg-sage-light text-sage-900" />
           <div className="min-w-0 flex-1">
             <p className="truncate text-[13px] font-semibold text-cream">{user?.name}</p>
-            <p className="truncate text-[11.5px] text-cream/55">{user?.plan?.name ?? (user?.role === 'admin' ? 'Administrador' : user?.email)}</p>
+            <p className="truncate text-[11.5px] text-cream/55">{user?.plan?.name ?? (user?.role === 'admin' ? (user.profile_name ?? 'Administrador') : user?.email)}</p>
           </div>
           <button
             type="button"

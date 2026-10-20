@@ -28,7 +28,7 @@ interface Dashboard {
 }
 
 export default function AdminDashboard() {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const q = useApi(() => api.get<Dashboard>('/admin/dashboard'), []);
   const meta = useApi(async () => {
     const [rooms, s] = await Promise.all([
@@ -50,7 +50,7 @@ export default function AdminDashboard() {
         eyebrow="Visão geral"
         title={<>Olá, <em className="font-normal not-italic text-sage-700">{firstName(user?.name)}</em></>}
         description={<span>{fmtDateLong(d?.today.date ?? new Date().toISOString().slice(0, 10))}</span>}
-        actions={<LinkButton to="/admin/agenda">Abrir agenda</LinkButton>}
+        actions={can('agenda') && <LinkButton to="/admin/agenda">Abrir agenda</LinkButton>}
       />
 
       {q.error && <ErrorState message={q.error} onRetry={q.refetch} />}
@@ -59,7 +59,7 @@ export default function AdminDashboard() {
         {!d ? Array.from({ length: 5 }, (_, i) => <Skeleton key={i} className="h-[128px] rounded-[22px]" />) : (
           <>
             <Stat label="Hoje" value={d.today.bookings.length} hint={d.today.bookings.length === 1 ? 'reserva' : 'reservas'} icon={<CalendarCheck />} />
-            <Stat label="Aprovações" value={d.kpis.pending_approvals} hint={d.kpis.pending_approvals ? <Link to="/admin/reservas?status=pending" className="font-semibold text-amber no-underline">Revisar agora →</Link> : 'Nada pendente'} icon={<Hourglass />} tone="amber" />
+            <Stat label="Aprovações" value={d.kpis.pending_approvals} hint={d.kpis.pending_approvals ? (can('bookings') ? <Link to="/admin/reservas?status=pending" className="font-semibold text-amber no-underline">Revisar agora →</Link> : 'Aguardando aprovação') : 'Nada pendente'} icon={<Hourglass />} tone="amber" />
             <Stat label="Horas no mês" value={fmtHours(d.kpis.month_minutes)} hint={`${d.kpis.month_bookings} reservas`} icon={<Clock />} />
             <Stat label="Receita do mês" value={fmtMoney(d.kpis.month_revenue_cents)} hint={`${fmtMoney(d.kpis.month_paid_cents)} recebido`} icon={<Wallet />} tone="clay" />
             <Stat label="A receber" value={fmtMoney(d.kpis.receivable_cents)} hint={`${d.kpis.active_clients} clientes ativos`} icon={<Users />} tone="amber" />
@@ -68,7 +68,7 @@ export default function AdminDashboard() {
       </div>
 
       <Card className="mb-6">
-        <CardHeader title="Salas agora" subtitle="Quem está usando cada sala neste momento" action={<Link to="/admin/qr-codes" className="text-[13px] font-semibold text-sage-700 no-underline hover:underline">QR das salas</Link>} />
+        <CardHeader title="Salas agora" subtitle="Quem está usando cada sala neste momento" action={can('qrcodes') && <Link to="/admin/qr-codes" className="text-[13px] font-semibold text-sage-700 no-underline hover:underline">QR das salas</Link>} />
         {!d ? <Skeleton className="h-[120px]" /> : (
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {d.rooms_live.map((l) => (
