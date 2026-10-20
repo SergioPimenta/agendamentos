@@ -33,3 +33,11 @@ server/uploads/*
 
 # sqlite local
 server/data/
+
+.vercel
+.env*
+
+# criados pela CLI/integrações da Vercel
+.agents
+.claude
+skills-lock.json

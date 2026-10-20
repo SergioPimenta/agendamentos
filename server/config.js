@@ -18,8 +18,10 @@ export const config = {
   port: Number(process.env.PORT) || 3001,
   jwtSecret: process.env.JWT_SECRET || 'dev-only-secret-change-me',
   appUrl: (process.env.APP_URL || 'http://localhost:5173').replace(/\/$/, ''),
-  // 'mysql' quando DB_HOST está definido; caso contrário SQLite local (arquivo).
-  dbDriver: process.env.DB_HOST ? 'mysql' : 'sqlite',
+  // 'postgres' quando DATABASE_URL está definido (Neon, Supabase...), 'mysql' quando DB_HOST está definido;
+  // caso contrário SQLite local (arquivo).
+  databaseUrl: process.env.DATABASE_URL || '',
+  dbDriver: process.env.DATABASE_URL ? 'postgres' : process.env.DB_HOST ? 'mysql' : 'sqlite',
   sqlitePath: process.env.SQLITE_PATH || path.join(__dirname, 'data', 'agendamento.db'),
   mysql: {
     host: process.env.DB_HOST,

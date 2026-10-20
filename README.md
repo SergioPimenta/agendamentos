@@ -114,9 +114,9 @@ src/
 
 O front-end vira estático e a API roda como uma função (`api/index.js`, configurada em `vercel.json`).
 
-1. **Banco MySQL externo é obrigatório.** O SQLite grava em arquivo e a Vercel não guarda arquivos entre execuções. Use qualquer MySQL na nuvem (TiDB Cloud, Railway, Aiven etc.). As tabelas são criadas sozinhas no primeiro acesso.
+1. **Banco externo é obrigatório.** O SQLite grava em arquivo e a Vercel não guarda arquivos entre execuções. O sistema aceita Postgres (`DATABASE_URL`, ex.: Neon, que a Vercel cria em *Storage*) ou MySQL (`DB_HOST`, `DB_USER`...). As tabelas são criadas sozinhas no primeiro acesso.
 2. Importe o repositório em vercel.com/new (ou rode `npx vercel` na pasta do projeto).
-3. Em *Settings → Environment Variables* defina: `JWT_SECRET` (24+ caracteres), `APP_URL` (a URL final, ex.: `https://seu-projeto.vercel.app`), `TRUST_PROXY=1`, `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USER`, `EMAIL_PASS`, `EMAIL_FROM`, `CRON_SECRET` (qualquer texto longo) e, para pagamentos, `PAGARME_SECRET_KEY`, `PAGARME_PUBLIC_KEY`, `PAGARME_WEBHOOK_TOKEN`.
+3. Em *Settings → Environment Variables* defina: `JWT_SECRET` (24+ caracteres), `APP_URL` (a URL final, ex.: `https://seu-projeto.vercel.app`), `TRUST_PROXY=1`, `DATABASE_URL` (ou `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` para MySQL), `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USER`, `EMAIL_PASS`, `EMAIL_FROM`, `CRON_SECRET` (qualquer texto longo) e, para pagamentos, `PAGARME_SECRET_KEY`, `PAGARME_PUBLIC_KEY`, `PAGARME_WEBHOOK_TOKEN`.
 4. No Pagar.me, aponte o webhook para `https://seu-projeto.vercel.app/api/webhooks/pagarme/<PAGARME_WEBHOOK_TOKEN>`.
 
 Limitações na Vercel:

@@ -4,7 +4,8 @@ import { config } from '../config.js';
 import { db } from './index.js';
 import { nowStamp, addDays, nowLocal, weekdayOf, toMin } from '../utils/time.js';
 
-const pk = () => (db.dialect === 'mysql' ? 'INT AUTO_INCREMENT PRIMARY KEY' : 'INTEGER PRIMARY KEY AUTOINCREMENT');
+const PK = { mysql: 'INT AUTO_INCREMENT PRIMARY KEY', postgres: 'SERIAL PRIMARY KEY', sqlite: 'INTEGER PRIMARY KEY AUTOINCREMENT' };
+const pk = () => PK[db.dialect];
 const tail = () => (db.dialect === 'mysql' ? ' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci' : '');
 
 /** Datas e horas são guardadas como texto no horário local de Curitiba (YYYY-MM-DD / HH:MM). */

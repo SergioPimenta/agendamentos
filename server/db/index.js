@@ -42,6 +42,7 @@ async function createSqlite() {
 
   return {
     dialect: 'sqlite',
+    withLock: (fn) => fn(),
     query: (s, p) => exclusive(() => ops.query(s, p)),
     get: (s, p) => exclusive(() => ops.get(s, p)),
     run: (s, p) => exclusive(() => ops.run(s, p)),
@@ -89,6 +90,7 @@ async function createMysql() {
 
   return {
     dialect: 'mysql',
+    withLock: (fn) => fn(),
     ...bind(pool),
     forUpdate: (sql) => sql,
     transaction: async (fn) => {
@@ -109,4 +111,90 @@ async function createMysql() {
   };
 }
 
-export const db = config.dbDriver === 'mysql' ? await createMysql() : await createSqlite();
+// Tabelas sem coluna `id` (chave natural): o INSERT delas não pede RETURNING id.
+const NO_ID_TABLES = new Set(['settings', 'business_hours', 'email_templates', 'schema_migrations']);
+
+/** `?` -> `$1, $2...` (ignorando o que está entre aspas) e LIKE -> ILIKE (SQLite/MySQL não diferenciam maiúsculas). */
+function toPostgres(sql) {
+  let n = 0;
+  let quote = null;
+  let out = '';
+  for (const ch of sql) {
+    if (quote) {
+      if (ch === quote) quote = null;
+      out += ch;
+    } else if (ch === "'" || ch === '"') {
+      quote = ch;
+      out += ch;
+    } else if (ch === '?') {
+      out += `$${++n}`;
+    } else {
+      out += ch;
+    }
+  }
+  return out.replace(/\bLIKE\b/gi, 'ILIKE');
+}
+
+const insertTable = (sql) => /^\s*INSERT\s+INTO\s+"?(\w+)"?/i.exec(sql)?.[1]?.toLowerCase();
+
+async function createPostgres() {
+  const pg = (await import('pg')).default;
+  // COUNT/SUM chegam como bigint/numeric (texto); o resto do código espera números.
+  pg.types.setTypeParser(20, (v) => Number(v));
+  pg.types.setTypeParser(1700, (v) => Number(v));
+  const poolMax = Number(process.env.DB_POOL_MAX) || 5;
+  const pool = new pg.Pool({
+    connectionString: config.databaseUrl,
+    max: poolMax,
+    idleTimeoutMillis: 10_000,
+    connectionTimeoutMillis: 15_000,
+  });
+  pool.on('error', (err) => console.error('[db] conexão ociosa falhou:', err.message));
+
+  const bind = (c) => ({
+    query: async (sql, params) => (await c.query(toPostgres(sql), clean(params))).rows,
+    get: async (sql, params) => (await c.query(toPostgres(sql), clean(params))).rows[0],
+    run: async (sql, params) => {
+      const table = insertTable(sql);
+      const wantId = table && !NO_ID_TABLES.has(table) && !/\bRETURNING\b/i.test(sql);
+      const r = await c.query(toPostgres(wantId ? `${sql} RETURNING id` : sql), clean(params));
+      return { insertId: wantId ? Number(r.rows[0]?.id) : 0, changes: r.rowCount ?? 0 };
+    },
+    exec: async (sql) => {
+      await c.query(sql);
+    },
+    forUpdate: (sql) => `${sql} FOR UPDATE`,
+  });
+
+  const transaction = async (fn) => {
+    const c = await pool.connect();
+    try {
+      await c.query('BEGIN');
+      const out = await fn(bind(c));
+      await c.query('COMMIT');
+      return out;
+    } catch (err) {
+      await c.query('ROLLBACK').catch(() => {});
+      throw err;
+    } finally {
+      c.release();
+    }
+  };
+
+  return {
+    dialect: 'postgres',
+    ...bind(pool),
+    forUpdate: (sql) => sql,
+    transaction,
+    // Trava de aviso do Postgres presa a uma transação (funciona também atrás do pooler do Neon).
+    // Com 1 única conexão (testes) a trava prenderia a própria conexão; nesse caso ela é desnecessária.
+    withLock: (fn) =>
+      poolMax === 1 ? fn() : transaction(async (tx) => {
+        await tx.exec('SELECT pg_advisory_xact_lock(727401)');
+        return fn();
+      }),
+    close: () => pool.end(),
+  };
+}
+
+export const db = config.dbDriver === 'postgres' ? await createPostgres() : config.dbDriver === 'mysql' ? await createMysql() : await createSqlite();

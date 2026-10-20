@@ -4,6 +4,7 @@
   "installCommand": "npm install && npm --prefix server install",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "regions": ["iad1"],
   "functions": {
     "api/index.js": { "maxDuration": 30, "includeFiles": "server/**" }
   },

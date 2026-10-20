@@ -4,6 +4,7 @@ import fs from 'fs';
 import helmet from 'helmet';
 import path from 'path';
 import { config } from './config.js';
+import { db } from './db/index.js';
 import { migrate, seed } from './db/migrate.js';
 import adminRoutes from './routes/admin.js';
 import appRoutes from './routes/app.js';
@@ -15,8 +16,11 @@ import { autoCloseSessions } from './services/sessions.js';
 import { asyncHandler, errorHandler } from './utils/http.js';
 
 export async function createApp() {
-  await migrate();
-  await seed();
+  // Várias instâncias serverless podem subir juntas: só uma por vez cria/atualiza as tabelas.
+  await db.withLock(async () => {
+    await migrate();
+    await seed();
+  });
 
   const app = express();
   if (process.env.TRUST_PROXY) app.set('trust proxy', Number(process.env.TRUST_PROXY) || process.env.TRUST_PROXY);
