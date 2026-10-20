@@ -1,0 +1,265 @@
+import { useState, type FormEvent } from 'react';
+import { Mail, Pencil, Phone, Plus, Trash2, Users } from 'lucide-react';
+import { BookingDetail } from '../../components/booking/BookingDetail';
+import { BookingRow } from '../../components/booking/BookingRow';
+import { Button } from '../../components/ui/Button';
+import { Badge, EmptyState, ErrorState, Skeleton, useConfirm, useToast } from '../../components/ui/Feedback';
+import { Input, Select, SearchInput, Switch, Textarea } from '../../components/ui/Form';
+import { Modal } from '../../components/ui/Modal';
+import { Avatar, DataTable, PageHeader, Td, Th } from '../../components/ui/Misc';
+import { useApi, useDebounced } from '../../hooks/useApi';
+import { fmtDateFull, fmtDuration, fmtMoney, fmtMonth, todayStr } from '../../lib/format';
+import { api } from '../../services/api';
+import type { Booking, Client, Plan, Statement } from '../../types';
+
+const emptyForm = { name: '', email: '', password: '', role: 'client', phone: '', document: '', company: '', plan_id: '', notes: '', active: true };
+
+export default function AdminClients() {
+  const toast = useToast();
+  const confirm = useConfirm();
+  const [text, setText] = useState('');
+  const q = useDebounced(text, 300);
+  const [plan, setPlan] = useState('');
+  const [active, setActive] = useState('');
+  const [detailId, setDetailId] = useState<number | null>(null);
+  const [form, setForm] = useState<{ client?: Client } | null>(null);
+
+  const list = useApi(() => api.get<{ users: Client[] }>('/admin/users', { q, plan_id: plan, active }), [q, plan, active]);
+  const plans = useApi(() => api.get<{ plans: Plan[] }>('/admin/plans'), []);
+
+  return (
+    <>
+      <PageHeader
+        eyebrow="Pessoas"
+        title="Clientes"
+        description="Quem usa o espaço, em qual plano e quando reservou pela última vez."
+        actions={<Button icon={<Plus size={16} />} onClick={() => setForm({})}>Novo cliente</Button>}
+      />
+
+      <div className="mb-5 grid gap-3 sm:grid-cols-[1.6fr_1fr_1fr]">
+        <SearchInput placeholder="Buscar por nome, e-mail, empresa…" value={text} onChange={(e) => setText(e.target.value)} aria-label="Buscar" />
+        <Select aria-label="Plano" value={plan} onChange={(e) => setPlan(e.target.value)}>
+          <option value="">Todos os planos</option>
+          {plans.data?.plans.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </Select>
+        <Select aria-label="Situação" value={active} onChange={(e) => setActive(e.target.value)}>
+          <option value="">Ativos e inativos</option>
+          <option value="true">Somente ativos</option>
+          <option value="false">Somente inativos</option>
+        </Select>
+      </div>
+
+      {list.error && <ErrorState message={list.error} onRetry={list.refetch} />}
+      {!list.data ? <Skeleton className="h-[320px] rounded-[22px]" /> : list.data.users.length === 0 ? (
+        <div className="rounded-[22px] border border-ink/8 bg-cream"><EmptyState icon={<Users />} title="Nenhum cliente encontrado" /></div>
+      ) : (
+        <DataTable className={list.loading ? 'opacity-60' : ''}>
+          <thead><tr><Th>Cliente</Th><Th>Contato</Th><Th>Plano</Th><Th>Reservas</Th><Th>Próxima reserva</Th><Th>Situação</Th></tr></thead>
+          <tbody>
+            {list.data.users.map((c) => (
+              <tr key={c.id} onClick={() => setDetailId(c.id)} className="cursor-pointer transition-colors hover:bg-sage-dim/50">
+                <Td>
+                  <div className="flex items-center gap-3">
+                    <Avatar name={c.name} size={36} />
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">{c.name} {c.role === 'admin' && <Badge tone="ink" className="ml-1">admin</Badge>}</p>
+                      <p className="truncate text-[12px] text-stone">{c.company || c.email}</p>
+                    </div>
+                  </div>
+                </Td>
+                <Td><span className="block text-[13px]">{c.email}</span><span className="text-[12px] text-stone">{c.phone || '—'}</span></Td>
+                <Td>{c.plan_name ? <Badge tone="sage">{c.plan_name}</Badge> : <span className="text-stone-light">—</span>}</Td>
+                <Td>{c.bookings_count}</Td>
+                <Td>{c.next_booking ? `${fmtDateFull(c.next_booking.slice(0, 10))} ${c.next_booking.slice(11)}` : '—'}</Td>
+                <Td>{c.active ? <Badge tone="sage">Ativo</Badge> : <Badge tone="rose">Inativo</Badge>}</Td>
+              </tr>
+            ))}
+          </tbody>
+        </DataTable>
+      )}
+
+      <ClientDetail
+        id={detailId}
+        onClose={() => setDetailId(null)}
+        onEdit={(c) => { setDetailId(null); setForm({ client: c }); }}
+        onChanged={list.reload}
+      />
+      <ClientForm
+        open={!!form}
+        client={form?.client}
+        plans={plans.data?.plans ?? []}
+        onClose={() => setForm(null)}
+        onSaved={() => { setForm(null); list.reload(); }}
+        onDelete={async (c) => {
+          const ok = await confirm({ title: `Excluir ${c.name}?`, description: 'Só é possível excluir clientes sem histórico de reservas. Caso contrário, desative a conta.', confirmLabel: 'Excluir', tone: 'danger' });
+          if (!ok) return;
+          try {
+            await api.delete(`/admin/users/${c.id}`);
+            toast.success('Cliente excluído.');
+            setForm(null);
+            list.reload();
+          } catch (e) {
+            toast.error(e instanceof Error ? e.message : 'Não foi possível excluir.');
+          }
+        }}
+      />
+    </>
+  );
+}
+
+function ClientForm({ open, client, plans, onClose, onSaved, onDelete }: {
+  open: boolean; client?: Client; plans: Plan[]; onClose: () => void; onSaved: () => void; onDelete: (c: Client) => void;
+}) {
+  const toast = useToast();
+  const [f, setF] = useState(emptyForm);
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [seed, setSeed] = useState<number | null | undefined>(undefined);
+
+  // Reinicia ao abrir
+  const key = open ? (client?.id ?? 0) : -1;
+  if (seed !== key) {
+    setSeed(key);
+    if (open) {
+      setError('');
+      setF(client ? {
+        name: client.name, email: client.email, password: '', role: client.role, phone: client.phone, document: client.document,
+        company: client.company, plan_id: client.plan_id ? String(client.plan_id) : '', notes: client.notes, active: client.active,
+      } : emptyForm);
+    }
+  }
+
+  const set = (k: keyof typeof emptyForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setF((s) => ({ ...s, [k]: e.target.value }));
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSaving(true);
+    try {
+      const body = { ...f, plan_id: f.plan_id ? Number(f.plan_id) : null, password: f.password || undefined };
+      if (client) await api.put(`/admin/users/${client.id}`, body);
+      else await api.post('/admin/users', body);
+      toast.success(client ? 'Cliente atualizado.' : 'Cliente criado.');
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível salvar.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      locked={saving}
+      title={client ? 'Editar cliente' : 'Novo cliente'}
+      footer={
+        <>
+          {client && <Button variant="danger" className="sm:mr-auto" icon={<Trash2 size={15} />} onClick={() => onDelete(client)}>Excluir</Button>}
+          <Button variant="secondary" onClick={onClose}>Cancelar</Button>
+          <Button loading={saving} onClick={() => (document.getElementById('client-form') as HTMLFormElement)?.requestSubmit()}>Salvar</Button>
+        </>
+      }
+    >
+      <form id="client-form" onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
+        {error && <div role="alert" className="rounded-xl border border-rose/25 bg-rose-dim px-4 py-3 text-[13px] text-rose sm:col-span-2">{error}</div>}
+        <Input containerClassName="sm:col-span-2" label="Nome completo" required value={f.name} onChange={set('name')} />
+        <Input label="E-mail" type="email" required value={f.email} onChange={set('email')} />
+        <Input label={client ? 'Nova senha' : 'Senha inicial'} type="password" autoComplete="new-password" required={!client} minLength={8} hint={client ? 'Deixe em branco para manter' : 'Mínimo de 8 caracteres'} value={f.password} onChange={set('password')} />
+        <Input label="Telefone / WhatsApp" value={f.phone} onChange={set('phone')} />
+        <Input label="Empresa / profissão" value={f.company} onChange={set('company')} />
+        <Input label="CPF / CNPJ" value={f.document} onChange={set('document')} />
+        <Select label="Plano" value={f.plan_id} onChange={set('plan_id')}>
+          <option value="">Sem plano</option>
+          {plans.filter((p) => p.active || String(p.id) === f.plan_id).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </Select>
+        <Select label="Perfil de acesso" value={f.role} onChange={set('role')}>
+          <option value="client">Cliente</option>
+          <option value="admin">Administrador</option>
+        </Select>
+        <div className="flex items-end pb-2"><Switch checked={f.active} onChange={(v) => setF((s) => ({ ...s, active: v }))} label="Conta ativa" description="Desativada, não consegue entrar." /></div>
+        <Textarea containerClassName="sm:col-span-2" label="Observações internas" value={f.notes} onChange={set('notes')} />
+      </form>
+    </Modal>
+  );
+}
+
+interface Detail {
+  user: Client;
+  statement: Statement;
+  history: Booking[];
+  lifetime: { bookings: number; minutes: number; amount_cents: number; pending_cents: number };
+}
+
+function ClientDetail({ id, onClose, onEdit, onChanged }: { id: number | null; onClose: () => void; onEdit: (c: Client) => void; onChanged: () => void }) {
+  const toast = useToast();
+  const [month] = useState(todayStr().slice(0, 7));
+  const [selected, setSelected] = useState<Booking | null>(null);
+  const q = useApi(() => (id ? api.get<Detail>(`/admin/users/${id}`, { month }) : Promise.resolve(null)), [id, month]);
+  const d = q.data;
+
+  const payMonth = async () => {
+    if (!id) return;
+    try {
+      const r = await api.post<{ updated: number }>(`/admin/users/${id}/pay`, { month });
+      toast.success(`${r.updated} cobrança(s) marcadas como pagas.`);
+      q.reload();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Erro ao registrar pagamento.');
+    }
+  };
+
+  return (
+    <>
+      <Modal
+        open={!!id && !selected}
+        onClose={onClose}
+        size="lg"
+        title={d?.user.name ?? 'Cliente'}
+        subtitle={d?.user.company || d?.user.email}
+        footer={<>{d && <Button variant="secondary" icon={<Pencil size={15} />} onClick={() => onEdit(d.user)}>Editar</Button>}<Button variant="ghost" onClick={onClose}>Fechar</Button></>}
+      >
+        {!d ? <Skeleton className="h-[260px]" /> : (
+          <div className="flex flex-col gap-7">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-[13.5px] text-stone">
+              <a className="inline-flex items-center gap-2 no-underline hover:text-sage-700" href={`mailto:${d.user.email}`}><Mail size={15} />{d.user.email}</a>
+              {d.user.phone && <a className="inline-flex items-center gap-2 no-underline hover:text-sage-700" href={`tel:${d.user.phone}`}><Phone size={15} />{d.user.phone}</a>}
+              {d.user.plan_name ? <Badge tone="sage">{d.user.plan_name}</Badge> : <Badge tone="mist">Sem plano</Badge>}
+              {!d.user.active && <Badge tone="rose">Inativo</Badge>}
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              {[
+                ['Reservas (total)', String(d.lifetime.bookings)],
+                ['Horas (total)', fmtDuration(d.lifetime.minutes)],
+                ['Em aberto', fmtMoney(d.lifetime.pending_cents)],
+              ].map(([k, v]) => (
+                <div key={k} className="rounded-2xl bg-sand px-5 py-4"><p className="text-[11px] font-semibold tracking-[0.1em] text-stone uppercase">{k}</p><p className="mt-1 font-display text-[24px] font-medium text-ink">{v}</p></div>
+              ))}
+            </div>
+
+            <div>
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="font-display text-[17px] font-medium text-ink">Fatura de {fmtMonth(d.statement.month)}</h3>
+                {d.statement.totals.pending_cents > 0 && <Button size="sm" variant="soft" onClick={payMonth}>Marcar {fmtMoney(d.statement.totals.pending_cents)} como pago</Button>}
+              </div>
+              <p className="text-[13.5px] text-stone">
+                {d.statement.totals.bookings} reservas · {fmtDuration(d.statement.totals.minutes)} · total {fmtMoney(d.statement.totals.amount_cents)}
+                {d.statement.included_total != null && <> · plano: {fmtDuration(d.statement.included_used)} de {fmtDuration(d.statement.included_total)} usadas</>}
+              </p>
+            </div>
+
+            <div>
+              <h3 className="mb-3 font-display text-[17px] font-medium text-ink">Últimas reservas</h3>
+              {d.history.length === 0 ? <p className="text-[13.5px] text-stone">Sem reservas ainda.</p> : (
+                <div className="flex flex-col gap-2.5">{d.history.slice(0, 8).map((b) => <BookingRow key={b.id} booking={b} onClick={() => setSelected(b)} />)}</div>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
+      <BookingDetail booking={selected} admin onClose={() => setSelected(null)} onChanged={() => { q.reload(); onChanged(); }} />
+    </>
+  );
+}

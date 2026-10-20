@@ -1,0 +1,27 @@
+{
+  "name": "harmonize-agendamento-api",
+  "version": "1.0.0",
+  "description": "API do sistema de agendamento de salas do harmonizeoser",
+  "type": "module",
+  "main": "index.js",
+  "engines": {
+    "node": ">=22.5"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch --env-file-if-exists=.env index.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^2.4.0",
+    "mysql2": "^3.6.5",
+    "nodemailer": "^6.9.7",
+    "zod": "^4.1.0"
+  }
+}
