@@ -69,7 +69,7 @@ export function AppShell({ variant }: { variant: 'client' | 'admin' }) {
         </div>
       )}
 
-      <nav className="relative z-10 flex-1 overflow-y-auto px-3 pb-4" aria-label="Menu principal">
+      <nav className="scroll-sage-dark relative z-10 flex-1 overflow-y-auto px-3 pb-4 [scrollbar-gutter:stable]" aria-label="Menu principal">
         <ul className="flex flex-col gap-0.5">
           {items.map((item) => (
             <li key={item.to}>
