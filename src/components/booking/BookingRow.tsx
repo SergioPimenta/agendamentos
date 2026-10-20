@@ -38,7 +38,7 @@ export function BookingRow({ booking: b, onClick, showClient }: { booking: Booki
 
       <div className="hidden shrink-0 flex-col items-end gap-2 sm:flex">
         <StatusBadge status={b.display_status} awaitingPayment={b.awaiting_payment} />
-        <span className="text-[12.5px] font-medium text-stone">{b.price_cents > 0 ? fmtMoney(b.price_cents) : b.included_minutes > 0 ? 'No plano' : 'Sem cobrança'}</span>
+        <span className="text-[12.5px] font-medium text-stone">{b.price_cents > 0 ? fmtMoney(b.price_cents) : b.included_minutes > 0 ? 'No plano' : b.package_minutes > 0 ? 'No pacote' : 'Sem cobrança'}</span>
         {b.overtime_cents > 0 && <span className="text-[11.5px] font-medium text-rose">+ {fmtMoney(b.overtime_cents)} de excedente</span>}
       </div>
       <ChevronRight size={18} className="shrink-0 text-stone-light transition-transform group-hover:translate-x-1" />

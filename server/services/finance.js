@@ -3,6 +3,7 @@ import { db } from '../db/index.js';
 import { HttpError } from '../utils/http.js';
 import { addDays, nowLocal, nowStamp } from '../utils/time.js';
 import { CONSUMING, inList } from './availability.js';
+import { activatePackageForReceivable } from './packages.js';
 import { activatePlanForReceivable } from './plans.js';
 import { getSettings } from './settings.js';
 
@@ -216,7 +217,11 @@ export async function setEntryPaid(table, id, paid, { method: m, date } = {}) {
   if (!row) throw new HttpError(404, 'Lançamento não encontrado.');
   if (paid) {
     await db.run(`UPDATE ${t} SET status = 'paid', paid_at = ?, payment_method = ?, updated_at = ? WHERE id = ?`, [paidStamp(date), method(m), nowStamp(), id]);
-    if (table === 'receivables') await activatePlanForReceivable(id); // baixa manual de uma troca de plano também vale
+    if (table === 'receivables') {
+      // Baixa manual de uma troca de plano ou de uma compra de pacote também vale.
+      await activatePlanForReceivable(id);
+      await activatePackageForReceivable(id);
+    }
   } else {
     await db.run(`UPDATE ${t} SET status = 'pending', paid_at = NULL, payment_method = NULL, updated_at = ? WHERE id = ?`, [nowStamp(), id]);
   }

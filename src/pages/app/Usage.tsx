@@ -120,7 +120,10 @@ export default function Usage() {
                     <Td><span className="font-medium">{fmtDateShort(b.date)}</span> <span className="text-stone-light">{b.start_time}</span></Td>
                     <Td>{b.room.name}</Td>
                     <Td>{fmtDuration(b.total_minutes)}</Td>
-                    <Td>{b.included_minutes ? fmtDuration(b.included_minutes) : '—'}</Td>
+                    <Td>
+                      {b.included_minutes ? fmtDuration(b.included_minutes) : b.package_minutes ? null : '—'}
+                      {b.package_minutes > 0 && <span className="block text-[11.5px] text-sage-700">{fmtDuration(b.package_minutes)} de pacote</span>}
+                    </Td>
                     <Td className="text-right font-medium">
                       {b.price_cents ? fmtMoney(b.price_cents) : '—'}
                       {b.overtime_cents > 0 && <span className="block text-[11.5px] font-medium text-rose">+ {fmtMoney(b.overtime_cents)} excedente ({b.overtime_minutes} min)</span>}

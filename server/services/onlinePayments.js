@@ -7,6 +7,7 @@ import { CONSUMING, inList } from './availability.js';
 import { MIN_ONLINE_CENTS, formatBRL, getBookingRow, notifyBookingPaid, releaseExpiredHolds } from './bookings.js';
 import { sendTemplated } from './emailTemplates.js';
 import { METHOD_MAP, createCheckoutOrder, createDirectOrder, getOrder, pagarmeConfigured, pagarmeMode } from './pagarme.js';
+import { activatePackageForReceivable } from './packages.js';
 import { activatePlanForReceivable } from './plans.js';
 import { getSettings, onlinePaymentsReady } from './settings.js';
 
@@ -206,6 +207,7 @@ async function settle(payment, order, charge) {
       if (r.changes > 0) {
         settled++;
         await activatePlanForReceivable(it.id, tx); // mensalidade de troca de plano: o novo plano passa a valer
+        await activatePackageForReceivable(it.id, tx); // compra de pacote de horas: vira saldo
       } else skipped++;
     }
 

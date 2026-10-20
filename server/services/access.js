@@ -11,6 +11,7 @@ export const MODULES = [
   { key: 'bookings', label: 'Reservas', description: 'Lista de reservas, aprovação, cobrança e exportação.' },
   { key: 'clients', label: 'Clientes', description: 'Cadastro de clientes, faturas e histórico.' },
   { key: 'birthdays', label: 'Aniversariantes', description: 'Aniversariantes do mês, com base na data de nascimento dos clientes.' },
+  { key: 'packages', label: 'Pacotes de horas', description: 'Pacotes de horas à venda, compras dos clientes e saldos.' },
   { key: 'rooms', label: 'Salas', description: 'Cadastro das salas, preços e fotos.' },
   { key: 'plans', label: 'Planos', description: 'Planos, horas incluídas e descontos.' },
   { key: 'blocks', label: 'Bloqueios', description: 'Bloqueio de horários e salas.' },
@@ -73,7 +74,7 @@ export const DEFAULT_PROFILES = [
     description: 'Cuida da agenda, das reservas e dos clientes no dia a dia.',
     is_system: 0,
     permissions: {
-      ...noAccess(), dashboard: 'view', agenda: 'edit', bookings: 'edit', clients: 'edit', birthdays: 'view', rooms: 'view', plans: 'view', blocks: 'edit', qrcodes: 'view',
+      ...noAccess(), dashboard: 'view', agenda: 'edit', bookings: 'edit', clients: 'edit', birthdays: 'view', packages: 'view', rooms: 'view', plans: 'view', blocks: 'edit', qrcodes: 'view',
     },
   },
   {

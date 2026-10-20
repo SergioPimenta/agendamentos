@@ -11,6 +11,7 @@ import { requireAdmin, requireModule, verifyToken } from '../middleware/auth.js'
 import { LEVELS, MODULES, canEnterPanel, fullAccess, hasAccess, normalizePermissions } from '../services/access.js';
 import { CONSUMING, OCCUPYING, getBusinessHours, inList } from '../services/availability.js';
 import { birthdaysOfMonth } from '../services/birthdays.js';
+import { grantPackage, listPurchases, presentPackage } from '../services/packages.js';
 import { PLAN_ICONS, PLAN_LAYOUTS, presentShowcase } from '../services/plans.js';
 import {
   BOOKING_SELECT,
@@ -45,6 +46,7 @@ router.use('/dashboard', requireModule(['dashboard']));
 router.use('/agenda', requireModule(['agenda']));
 router.use('/bookings', requireModule(['bookings', 'agenda']));
 router.use('/birthdays', requireModule(['birthdays']));
+router.use('/packages', requireModule(['packages']));
 router.use('/rooms', requireModule(['rooms'], ['agenda', 'bookings']));
 router.use('/upload', requireModule(['rooms']));
 router.use('/plans', requireModule(['plans'], ['clients', 'finance']));
@@ -54,7 +56,7 @@ router.use('/reports', (req, res, next) => requireModule(['reports'], req.path =
 router.use(['/profiles', '/profiles-users'], requireModule(['profiles']));
 router.use('/users', (req, res, next) => {
   const isList = req.method === 'GET' && req.path === '/';
-  return requireModule(['clients'], isList ? ['bookings', 'agenda', 'finance'] : [])(req, res, next);
+  return requireModule(['clients'], isList ? ['bookings', 'agenda', 'finance', 'packages'] : [])(req, res, next);
 });
 // Regras e horários do espaço são lidas por várias telas; só quem tem Configurações altera.
 router.use(['/settings', '/hours'], (req, res, next) => (req.method === 'GET' ? next() : requireModule(['settings'])(req, res, next)));
@@ -808,6 +810,96 @@ router.delete(
     const used = await db.get('SELECT COUNT(*) AS n FROM users WHERE plan_id = ?', [pid]);
     if (Number(used.n) > 0) throw new HttpError(409, 'Há clientes neste plano. Mova-os para outro plano ou desative este.');
     await db.run('DELETE FROM plans WHERE id = ?', [pid]);
+    res.json({ ok: true });
+  }),
+);
+
+/* ---------------- pacotes de horas ---------------- */
+
+const packageInput = z.object({
+  name: z.string().trim().min(2, 'Informe o nome do pacote').max(80),
+  subtitle: z.string().trim().max(120).optional().default(''),
+  description: z.string().trim().max(255).optional().default(''),
+  minutes: z.coerce.number().int().min(15, 'O pacote precisa ter ao menos 15 minutos').max(100_000),
+  price_cents: z.coerce.number().int().min(0).max(10_000_000),
+  validity_days: z.coerce.number().int().min(0).max(3650).optional().default(0),
+  icon: z.enum(PLAN_ICONS).or(z.literal('')).optional().default(''),
+  featured: z.boolean().optional().default(false),
+  features: z.array(z.string().trim().min(1).max(200)).max(12).optional().default([]),
+  active: z.boolean().optional().default(true),
+  sort_order: z.coerce.number().int().min(0).max(999).optional().default(0),
+});
+
+const packageValues = (d) => [
+  d.name, d.subtitle, d.description, d.minutes, d.price_cents, d.validity_days, d.icon, d.featured ? 1 : 0, JSON.stringify(d.features), d.active ? 1 : 0, d.sort_order,
+];
+
+const packageRow = (pid) =>
+  db.get('SELECT k.*, (SELECT COUNT(*) FROM package_purchases p WHERE p.package_id = k.id AND p.status = \'paid\') AS sold_count FROM hour_packages k WHERE k.id = ?', [pid]);
+
+router.get(
+  '/packages',
+  asyncHandler(async (_req, res) => {
+    const rows = await db.query(
+      `SELECT k.*, (SELECT COUNT(*) FROM package_purchases p WHERE p.package_id = k.id AND p.status = 'paid') AS sold_count
+         FROM hour_packages k ORDER BY k.sort_order, k.id`,
+    );
+    res.json({ packages: rows.map(presentPackage) });
+  }),
+);
+
+router.post(
+  '/packages',
+  asyncHandler(async (req, res) => {
+    const d = parse(packageInput, req.body);
+    const r = await db.run(
+      `INSERT INTO hour_packages (name, subtitle, description, minutes, price_cents, validity_days, icon, featured, features, active, sort_order, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [...packageValues(d), nowStamp()],
+    );
+    res.status(201).json({ package: presentPackage(await packageRow(r.insertId)) });
+  }),
+);
+
+router.get(
+  '/packages/purchases',
+  asyncHandler(async (_req, res) => {
+    res.json({ purchases: await listPurchases(150) });
+  }),
+);
+
+/** Venda feita pela administração (ex.: paga no balcão): entra paga, com saldo e lançamento no Financeiro. */
+router.post(
+  '/packages/grant',
+  asyncHandler(async (req, res) => {
+    const d = parse(z.object({ user_id: id, package_id: id, method: z.enum(PAYMENT_METHODS).optional().default('outro') }), req.body);
+    const purchaseId = await grantPackage({ actor: req.user, userId: d.user_id, packageId: d.package_id, method: d.method });
+    res.status(201).json({ id: purchaseId });
+  }),
+);
+
+router.put(
+  '/packages/:id',
+  asyncHandler(async (req, res) => {
+    const pid = Number(req.params.id);
+    if (!(await db.get('SELECT id FROM hour_packages WHERE id = ?', [pid]))) throw new HttpError(404, 'Pacote não encontrado.');
+    const d = parse(packageInput, req.body);
+    await db.run(
+      `UPDATE hour_packages SET name = ?, subtitle = ?, description = ?, minutes = ?, price_cents = ?, validity_days = ?, icon = ?, featured = ?, features = ?, active = ?, sort_order = ? WHERE id = ?`,
+      [...packageValues(d), pid],
+    );
+    res.json({ package: presentPackage(await packageRow(pid)) });
+  }),
+);
+
+router.delete(
+  '/packages/:id',
+  asyncHandler(async (req, res) => {
+    const pid = Number(req.params.id);
+    const used = await db.get('SELECT COUNT(*) AS n FROM package_purchases WHERE package_id = ? AND status = \'paid\'', [pid]);
+    if (Number(used.n) > 0) throw new HttpError(409, 'Este pacote já foi vendido. Desative-o em vez de excluir.');
+    await db.run("DELETE FROM package_purchases WHERE package_id = ? AND status = 'pending'", [pid]);
+    await db.run('DELETE FROM hour_packages WHERE id = ?', [pid]);
     res.json({ ok: true });
   }),
 );

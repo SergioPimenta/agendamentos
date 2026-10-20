@@ -6,6 +6,7 @@ import { MAX_GUESTS, guestsToDb, normalizeGuests, parseGuests } from '../utils/g
 import { bookingToIcs } from '../utils/ics.js';
 import { sendTemplated } from './emailTemplates.js';
 import { onlinePaymentsReady } from './settings.js';
+import { planPackageUse, savePackageUse } from './packages.js';
 import { sessionInfo } from './sessionState.js';
 import { addDays, addMinutesAt, minutesBetween, monthRange, nowLocal, nowStamp } from '../utils/time.js';
 import { getSettings } from './settings.js';
@@ -49,6 +50,7 @@ export function serializeBooking(row, { rules, now = nowLocal(), isAdmin = false
     attendees: Number(row.attendees),
     total_minutes: Number(row.total_minutes),
     included_minutes: Number(row.included_minutes),
+    package_minutes: Number(row.package_minutes ?? 0),
     price_cents: Number(row.price_cents),
     payment_status: row.payment_status,
     series_id: row.series_id,
@@ -103,10 +105,19 @@ export async function computePricing(conn, { user, room, date, minutes, excludeI
     included = Math.max(0, Math.min(minutes, Number(plan.included_minutes) - used));
   }
 
-  const payable = minutes - included;
+  // Depois das horas do plano, o saldo de pacotes comprados cobre o que sobrar (da compra que vence primeiro).
+  const pkg = await planPackageUse(conn, { userId: user.id, date, minutes: minutes - included, excludeId });
+
+  const payable = minutes - included - pkg.used;
   const discount = plan ? Number(plan.room_discount_percent) : 0;
   const price = Math.round(((Number(room.price_cents) * payable) / 60) * (1 - discount / 100));
-  return { included_minutes: included, price_cents: price, payment_status: price > 0 ? 'pending' : 'none' };
+  return {
+    included_minutes: included,
+    package_minutes: pkg.used,
+    package_allocations: pkg.allocations,
+    price_cents: price,
+    payment_status: price > 0 ? 'pending' : 'none',
+  };
 }
 
 async function loadRoom(conn, id, { requireActive = true } = {}) {
@@ -200,15 +211,16 @@ export async function createBookings({ actor, input }) {
       const r = await tx.run(
         `INSERT INTO bookings
           (code, room_id, user_id, date, start_time, end_time, start_at, end_at, status, title, notes, attendees,
-           total_minutes, included_minutes, price_cents, payment_status, series_id, created_by, created_at, updated_at, hold_until, guests)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           total_minutes, included_minutes, package_minutes, price_cents, payment_status, series_id, created_by, created_at, updated_at, hold_until, guests)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           code, room.id, user.id, date, input.start_time, input.end_time, startAt, endAt, hold ? 'pending' : status,
-          input.title || '', input.notes || '', input.attendees, minutes, pricing.included_minutes,
+          input.title || '', input.notes || '', input.attendees, minutes, pricing.included_minutes, pricing.package_minutes,
           pricing.price_cents, pricing.payment_status, seriesId, actor.id, nowStamp(), nowStamp(),
           hold ? `${addMinutesAt(now.at, rules.booking_hold_minutes || 15)}:00` : null, guestsJson,
         ],
       );
+      await savePackageUse(tx, r.insertId, pricing.package_allocations);
       ids.push(r.insertId);
     }
     return ids;
@@ -284,14 +296,15 @@ export async function updateBooking({ actor, id, input }) {
 
     await tx.run(
       `UPDATE bookings SET room_id = ?, user_id = ?, date = ?, start_time = ?, end_time = ?, start_at = ?, end_at = ?,
-              title = ?, notes = ?, attendees = ?, total_minutes = ?, included_minutes = ?, price_cents = ?,
+              title = ?, notes = ?, attendees = ?, total_minutes = ?, included_minutes = ?, package_minutes = ?, price_cents = ?,
               payment_status = ?, status = ?, guests = ?, updated_at = ? WHERE id = ?`,
       [
         room.id, user.id, date, start, end, `${date} ${start}`, `${date} ${end}`,
         input.title ?? current.title, input.notes ?? current.notes ?? '', attendees, minutes,
-        pricing.included_minutes, pricing.price_cents, payment, pending ? 'pending' : current.status, guestsToDb(nextGuests), nowStamp(), id,
+        pricing.included_minutes, pricing.package_minutes, pricing.price_cents, payment, pending ? 'pending' : current.status, guestsToDb(nextGuests), nowStamp(), id,
       ],
     );
+    await savePackageUse(tx, id, pricing.package_allocations);
   });
 
   const row = serializeBooking(await getBookingRow(id), { rules, now, isAdmin, viewerId: actor.id });
@@ -356,9 +369,10 @@ export async function changeStatus({ actor, id, status }) {
       const pricing = await computePricing(tx, { user, room, date: row.date, minutes: Number(row.total_minutes), excludeId: id });
       await tx.run(
         `UPDATE bookings SET status = 'confirmed', cancelled_at = NULL, cancelled_by = NULL, cancel_reason = NULL,
-                included_minutes = ?, price_cents = ?, payment_status = ?, updated_at = ? WHERE id = ?`,
-        [pricing.included_minutes, pricing.price_cents, pricing.payment_status, nowStamp(), id],
+                included_minutes = ?, package_minutes = ?, price_cents = ?, payment_status = ?, updated_at = ? WHERE id = ?`,
+        [pricing.included_minutes, pricing.package_minutes, pricing.price_cents, pricing.payment_status, nowStamp(), id],
       );
+      await savePackageUse(tx, id, pricing.package_allocations);
     });
   } else {
     await db.run('UPDATE bookings SET status = ?, updated_at = ? WHERE id = ?', [status, nowStamp(), id]);

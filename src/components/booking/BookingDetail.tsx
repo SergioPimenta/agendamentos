@@ -137,6 +137,7 @@ export function BookingDetail({ booking: b, admin, onClose, onEdit, onChanged }:
             </Row>
           )}
           {b.included_minutes > 0 && <Row label="Incluído no plano">{fmtDuration(b.included_minutes)}</Row>}
+          {b.package_minutes > 0 && <Row label="Pago com pacote de horas">{fmtDuration(b.package_minutes)}</Row>}
           <Row label="Valor">{b.price_cents > 0 ? fmtMoney(b.price_cents) : 'Sem cobrança'}</Row>
           {b.notes && <Row label="Observações"><span className="font-normal whitespace-pre-wrap">{b.notes}</span></Row>}
           {b.status === 'cancelled' && b.cancel_reason && <Row label="Motivo do cancelamento">{b.cancel_reason}</Row>}

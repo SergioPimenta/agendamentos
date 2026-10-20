@@ -41,7 +41,7 @@ export interface Plan extends PlanShowcase {
 /** Nível de acesso a uma área do painel: sem acesso, só consulta ou consulta e alteração. */
 export type AccessLevel = 'none' | 'view' | 'edit';
 export type ModuleKey =
-  | 'dashboard' | 'agenda' | 'bookings' | 'clients' | 'birthdays' | 'rooms' | 'plans' | 'blocks' | 'finance'
+  | 'dashboard' | 'agenda' | 'bookings' | 'clients' | 'birthdays' | 'packages' | 'rooms' | 'plans' | 'blocks' | 'finance'
   | 'reports' | 'qrcodes' | 'email_templates' | 'settings' | 'profiles';
 export type Permissions = Record<ModuleKey, AccessLevel>;
 
@@ -117,6 +117,8 @@ export interface Booking {
   attendees: number;
   total_minutes: number;
   included_minutes: number;
+  /** Minutos pagos com o saldo de um pacote de horas. */
+  package_minutes: number;
   price_cents: number;
   payment_status: PaymentStatus;
   series_id: string | null;
@@ -394,6 +396,57 @@ export interface FinanceOverview {
 }
 
 /* ---------- Pagamento online (Pagar.me) ---------- */
+
+/** Pacote de horas à venda (configurado pela administração em Pacotes de horas). */
+export interface HourPackage {
+  id: number;
+  name: string;
+  subtitle: string;
+  description: string;
+  minutes: number;
+  price_cents: number;
+  /** Dias de validade a partir do pagamento; 0 = sem validade. */
+  validity_days: number;
+  icon: PlanIconKey | '';
+  featured: boolean;
+  features: string[];
+  active: boolean;
+  sort_order: number;
+  /** Quantas vezes já foi vendido (só na administração). */
+  sold_count?: number;
+}
+
+/** O que ainda sobra de uma compra de pacote. */
+export interface PackageLot {
+  id: number;
+  name: string;
+  minutes_total: number;
+  expires_at: string | null;
+  remaining: number;
+}
+
+export interface ClientPackages {
+  packages: HourPackage[];
+  balance: { minutes_available: number; lots: PackageLot[] };
+  pending_package_id: number | null;
+  online_payments: boolean;
+}
+
+export interface PackagePurchase {
+  id: number;
+  user_id: number;
+  user_name: string;
+  user_email: string;
+  name: string;
+  minutes_total: number;
+  minutes_left: number;
+  price_cents: number;
+  status: 'pending' | 'paid' | 'cancelled';
+  display_status: 'pending' | 'paid' | 'cancelled' | 'expired';
+  paid_at: string | null;
+  expires_at: string | null;
+  created_at: string;
+}
 
 /** Plano como o cliente o vê na hora de escolher. */
 export interface ClientPlan extends PlanShowcase {

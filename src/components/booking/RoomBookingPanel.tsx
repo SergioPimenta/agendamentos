@@ -18,6 +18,7 @@ import { SlotStrip } from './SlotStrip';
 interface Quote {
   minutes: number;
   included_minutes: number;
+  package_minutes?: number;
   price_cents: number;
   price_per_hour_cents: number;
 }
@@ -346,6 +347,9 @@ export function RoomBookingPanel({
                 <p className="text-[12.5px] text-stone">{start} às {end} · {fmtDuration(minutes)}</p>
                 {quote.included_minutes > 0 && (
                   <p className="mt-1 flex items-start gap-1.5 text-[12px] leading-snug text-sage-700"><Sparkles size={14} className="mt-px shrink-0" />{fmtDuration(quote.included_minutes)} descontadas do seu plano</p>
+                )}
+                {!!quote.package_minutes && quote.package_minutes > 0 && (
+                  <p className="mt-1 flex items-start gap-1.5 text-[12px] leading-snug text-sage-700"><Sparkles size={14} className="mt-px shrink-0" />{fmtDuration(quote.package_minutes)} descontadas do seu pacote de horas</p>
                 )}
               </div>
               <div className="text-right">

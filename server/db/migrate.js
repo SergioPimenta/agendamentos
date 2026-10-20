@@ -280,6 +280,54 @@ const migrations = [
       `ALTER TABLE plans ADD COLUMN contact_only INT NOT NULL DEFAULT 0`,
     ],
   },
+  {
+    // Pacotes de horas: catálogo (configurado pela administração), compras do cliente e o consumo de cada compra nas reservas.
+    id: '013_hour_packages',
+    statements: () => [
+      `CREATE TABLE IF NOT EXISTS hour_packages (
+        id ${pk()},
+        name VARCHAR(80) NOT NULL,
+        subtitle VARCHAR(120) NOT NULL DEFAULT '',
+        description VARCHAR(255) NOT NULL DEFAULT '',
+        minutes INT NOT NULL,
+        price_cents INT NOT NULL DEFAULT 0,
+        validity_days INT NOT NULL DEFAULT 0,
+        icon VARCHAR(20) NOT NULL DEFAULT '',
+        featured INT NOT NULL DEFAULT 0,
+        features TEXT NULL,
+        active INT NOT NULL DEFAULT 1,
+        sort_order INT NOT NULL DEFAULT 0,
+        created_at VARCHAR(19) NOT NULL
+      )${tail()}`,
+      `CREATE TABLE IF NOT EXISTS package_purchases (
+        id ${pk()},
+        user_id INT NOT NULL,
+        package_id INT NULL,
+        name VARCHAR(80) NOT NULL,
+        minutes_total INT NOT NULL,
+        price_cents INT NOT NULL DEFAULT 0,
+        validity_days INT NOT NULL DEFAULT 0,
+        status VARCHAR(10) NOT NULL DEFAULT 'pending',
+        receivable_id INT NULL,
+        paid_at VARCHAR(19) NULL,
+        expires_at VARCHAR(10) NULL,
+        created_by INT NULL,
+        created_at VARCHAR(19) NOT NULL,
+        updated_at VARCHAR(19) NOT NULL
+      )${tail()}`,
+      `CREATE TABLE IF NOT EXISTS package_usage (
+        id ${pk()},
+        purchase_id INT NOT NULL,
+        booking_id INT NOT NULL,
+        minutes INT NOT NULL
+      )${tail()}`,
+      `CREATE INDEX idx_package_purchases_user ON package_purchases (user_id)`,
+      `CREATE INDEX idx_package_usage_booking ON package_usage (booking_id)`,
+      `CREATE INDEX idx_package_usage_purchase ON package_usage (purchase_id)`,
+      `ALTER TABLE bookings ADD COLUMN package_minutes INT NOT NULL DEFAULT 0`,
+      `ALTER TABLE receivables ADD COLUMN package_purchase_id INT NULL`,
+    ],
+  },
 ];
 
 export async function migrate() {

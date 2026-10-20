@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   BarChart3, Cake, CalendarCheck, CalendarDays, CalendarPlus, DoorOpen, LayoutDashboard, LifeBuoy, LogOut, Menu,
-  Mail, QrCode, Receipt, Settings, Wallet, ShieldBan, Tags, UserRound, Users, X, ClipboardList, Leaf,
+  Mail, Package, QrCode, Receipt, Settings, Wallet, ShieldBan, Tags, UserRound, Users, X, ClipboardList, Leaf,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { cn } from '../../lib/cn';
@@ -20,7 +20,7 @@ const clientNav: NavItem[] = [
   { to: '/app/reservar', label: 'Reservar sala', icon: <CalendarPlus size={18} /> },
   { to: '/app/reservas', label: 'Minhas reservas', icon: <CalendarCheck size={18} /> },
   { to: '/app/salas', label: 'Salas', icon: <DoorOpen size={18} /> },
-  { to: '/app/planos', label: 'Planos', icon: <Tags size={18} /> },
+  { to: '/app/planos', label: 'Planos e pacotes', icon: <Tags size={18} /> },
   { to: '/app/consumo', label: 'Consumo e faturas', icon: <Receipt size={18} /> },
   { to: '/app/perfil', label: 'Meu perfil', icon: <UserRound size={18} /> },
   { to: '/app/ajuda', label: 'Ajuda', icon: <LifeBuoy size={18} /> },
@@ -34,6 +34,7 @@ const adminNav: NavItem[] = [
   { to: '/admin/aniversariantes', label: 'Aniversariantes', icon: <Cake size={18} />, module: 'birthdays' },
   { to: '/admin/salas', label: 'Salas', icon: <DoorOpen size={18} />, module: 'rooms' },
   { to: '/admin/planos', label: 'Planos', icon: <Tags size={18} />, module: 'plans' },
+  { to: '/admin/pacotes', label: 'Pacotes de horas', icon: <Package size={18} />, module: 'packages' },
   { to: '/admin/bloqueios', label: 'Bloqueios', icon: <ShieldBan size={18} />, module: 'blocks' },
   { to: '/admin/financeiro', label: 'Financeiro', icon: <Wallet size={18} />, module: 'finance' },
   { to: '/admin/relatorios', label: 'Relatórios', icon: <BarChart3 size={18} />, module: 'reports' },

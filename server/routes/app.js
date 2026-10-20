@@ -27,6 +27,7 @@ import {
 import { checkIn, checkOut, checkoutPreview, findRoomSession, computeOvertime } from '../services/sessions.js';
 import { createCharge, getPaymentFor, payBookingDirect, presentPayment, syncPayment } from '../services/onlinePayments.js';
 import { config } from '../config.js';
+import { packagesForClient, purchasePackage } from '../services/packages.js';
 import { plansForClient, subscribeToPlan } from '../services/plans.js';
 import { onlinePaymentsReady } from '../services/settings.js';
 import { getSettings, publicSettings } from '../services/settings.js';
@@ -296,7 +297,8 @@ router.post(
       buffer: Number(room.buffer_minutes) || 0, excludeId: input.exclude_booking_id ?? null,
     });
     const pricing = await computePricing(db, { user, room, date: input.date, minutes, excludeId: input.exclude_booking_id ?? null });
-    res.json({ minutes, ...pricing, price_per_hour_cents: Number(room.price_cents) });
+    const { package_allocations: _allocations, ...quote } = pricing;
+    res.json({ minutes, ...quote, price_per_hour_cents: Number(room.price_cents) });
   }),
 );
 
@@ -486,6 +488,23 @@ router.get(
     const q = parse(z.object({ month: z.string().regex(/^\d{4}-\d{2}$/).optional() }), req.query);
     const month = q.month || nowLocal().date.slice(0, 7);
     res.json(await monthStatement(req.user.id, month, await getSettings()));
+  }),
+);
+
+/** Pacotes de horas à venda e o saldo do cliente. */
+router.get(
+  '/me/packages',
+  asyncHandler(async (req, res) => {
+    res.json(await packagesForClient(req.user.id));
+  }),
+);
+
+/** O cliente compra um pacote: devolve o link de pagamento online. */
+router.post(
+  '/me/packages/:id/purchase',
+  asyncHandler(async (req, res) => {
+    const packageId = parse(z.coerce.number().int().positive(), req.params.id);
+    res.status(201).json(await purchasePackage({ actor: req.user, packageId }));
   }),
 );
 
