@@ -11,6 +11,7 @@ import appRoutes from './routes/app.js';
 import authRoutes from './routes/auth.js';
 import financeRoutes from './routes/finance.js';
 import webhookRoutes from './routes/webhooks.js';
+import { sendBirthdayEmails } from './services/birthdays.js';
 import { releaseExpiredHolds } from './services/bookings.js';
 import { autoCloseSessions } from './services/sessions.js';
 import { asyncHandler, errorHandler } from './utils/http.js';
@@ -52,6 +53,7 @@ export async function createApp() {
     }
     await releaseExpiredHolds();
     await autoCloseSessions();
+    await sendBirthdayEmails();
     res.json({ ok: true });
   }));
   app.use('/api/auth', authRoutes);
@@ -82,4 +84,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(im
   setInterval(() => releaseExpiredHolds().catch((e) => console.error('[reservas] falha ao liberar horários:', e.message)), 60 * 1000).unref();
 
   setInterval(() => autoCloseSessions().catch((e) => console.error('[sessões] falha ao encerrar:', e.message)), 5 * 60 * 1000).unref();
+
+  // E-mail de aniversário: confere a cada hora (e logo após ligar, caso o servidor tenha ficado fora do ar de manhã).
+  const birthdays = () => sendBirthdayEmails().catch((e) => console.error('[aniversários] falha ao enviar:', e.message));
+  setTimeout(birthdays, 30 * 1000).unref();
+  setInterval(birthdays, 60 * 60 * 1000).unref();
 }

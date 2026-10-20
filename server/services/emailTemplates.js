@@ -75,6 +75,22 @@ export const TEMPLATES = [
     },
   },
   {
+    key: 'birthday',
+    group: 'Conta',
+    name: 'Feliz aniversário',
+    description: 'Enviado automaticamente de manhã, no dia do aniversário do cliente (data de nascimento do cadastro).',
+    recipient: 'Cliente',
+    variables: [...PERSON_VARS, { name: 'idade', label: 'Idade que o cliente completa (vazia se não for possível calcular)' }],
+    ctaPath: '/app/reservar',
+    defaults: {
+      subject: 'Feliz aniversário, {{nome}}! 🎂',
+      title: 'Feliz aniversário!',
+      body:
+        'Olá, {{nome}}! Hoje é um dia especial e a equipe do {{empresa}} não poderia deixar de lembrar. Desejamos um aniversário cheio de saúde, alegria e muitas conquistas.\n\nSerá um prazer receber você por aqui.',
+      cta_label: 'Reservar uma sala',
+    },
+  },
+  {
     key: 'password_reset',
     group: 'Conta',
     name: 'Redefinição de senha',
@@ -495,6 +511,7 @@ export function sampleData(key, viewer = {}) {
     cliente: viewer.name || 'Maria Souza',
     email_cliente: viewer.email || 'maria@exemplo.com.br',
     telefone_cliente: '(41) 99999-0000',
+    idade: '35',
   };
   const rows = [['Sala', vars.sala], ['Data', vars.data], ['Horário', vars.horario], ['Valor', vars.valor], ['Código', vars.codigo]];
   return { vars, rows, ctaUrl: def.ctaPath ? `${config.appUrl}${def.ctaPath}` : undefined };

@@ -7,7 +7,7 @@ import { HttpError, asyncHandler } from '../utils/http.js';
 export const signToken = (user) => jwt.sign({ id: user.id, role: user.role }, config.jwtSecret, { expiresIn: '7d' });
 
 const USER_SQL = `SELECT u.id, u.name, u.email, u.role, u.phone, u.document, u.company, u.plan_id, u.active, u.profile_id,
-                         ap.permissions AS profile_permissions
+                         ap.permissions AS profile_permissions, ap.is_system AS profile_is_system
                     FROM users u LEFT JOIN access_profiles ap ON ap.id = u.profile_id WHERE u.id = ?`;
 
 /**

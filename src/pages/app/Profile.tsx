@@ -4,13 +4,14 @@ import { Input } from '../../components/ui/Form';
 import { useToast } from '../../components/ui/Feedback';
 import { Avatar, Card, CardHeader, PageHeader } from '../../components/ui/Misc';
 import { useAuth } from '../../contexts/AuthContext';
+import { todayStr } from '../../lib/format';
 import { api } from '../../services/api';
 import type { User } from '../../types';
 
 export default function Profile() {
   const { user, setUser } = useAuth();
   const toast = useToast();
-  const [form, setForm] = useState({ name: user?.name ?? '', phone: user?.phone ?? '', company: user?.company ?? '', document: user?.document ?? '' });
+  const [form, setForm] = useState({ name: user?.name ?? '', phone: user?.phone ?? '', company: user?.company ?? '', document: user?.document ?? '', birth_date: user?.birth_date ?? '' });
   const [saving, setSaving] = useState(false);
   const [pw, setPw] = useState({ current_password: '', new_password: '' });
   const [pwSaving, setPwSaving] = useState(false);
@@ -63,6 +64,7 @@ export default function Profile() {
             <Input label="Telefone / WhatsApp" type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
             <Input label="Empresa ou profissão" value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} />
             <Input label="CPF / CNPJ" value={form.document} onChange={(e) => setForm({ ...form, document: e.target.value })} hint="Usado para emissão de notas, se necessário." />
+            <Input label="Data de nascimento" type="date" min="1900-01-01" max={todayStr()} value={form.birth_date} onChange={(e) => setForm({ ...form, birth_date: e.target.value })} hint="Para a gente te desejar um feliz aniversário." />
             <Input label="E-mail" value={user?.email ?? ''} disabled hint="Para trocar o e-mail, fale com a recepção." />
             <div className="sm:col-span-2"><Button type="submit" loading={saving}>Salvar alterações</Button></div>
           </form>

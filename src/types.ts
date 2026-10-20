@@ -16,7 +16,7 @@ export interface Plan {
 /** Nível de acesso a uma área do painel: sem acesso, só consulta ou consulta e alteração. */
 export type AccessLevel = 'none' | 'view' | 'edit';
 export type ModuleKey =
-  | 'dashboard' | 'agenda' | 'bookings' | 'clients' | 'rooms' | 'plans' | 'blocks' | 'finance'
+  | 'dashboard' | 'agenda' | 'bookings' | 'clients' | 'birthdays' | 'rooms' | 'plans' | 'blocks' | 'finance'
   | 'reports' | 'qrcodes' | 'email_templates' | 'settings' | 'profiles';
 export type Permissions = Record<ModuleKey, AccessLevel>;
 
@@ -48,6 +48,7 @@ export interface User {
   role: Role;
   profile_name?: string | null;
   permissions: Permissions;
+  birth_date?: string;
   phone: string;
   document: string;
   company: string;
@@ -239,6 +240,7 @@ export interface Client {
   phone: string;
   document: string;
   company: string;
+  birth_date: string;
   plan_id: number | null;
   plan_name: string | null;
   notes: string;
@@ -247,6 +249,21 @@ export interface Client {
   created_at: string;
   bookings_count?: number;
   next_booking?: string | null;
+}
+
+export interface Birthday {
+  id: number;
+  name: string;
+  email: string;
+  phone: string;
+  company: string;
+  plan_name: string | null;
+  birth_date: string;
+  day: number;
+  date: string;
+  turning_age: number | null;
+  is_today: boolean;
+  email_sent: boolean;
 }
 
 export interface EmailTemplateValues {

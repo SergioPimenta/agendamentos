@@ -243,6 +243,14 @@ const migrations = [
       `ALTER TABLE users ADD COLUMN profile_id INT NULL`,
     ],
   },
+  {
+    // Aniversariantes: data de nascimento (YYYY-MM-DD) e o último ano em que o e-mail de parabéns foi enviado.
+    id: '009_birthdays',
+    statements: () => [
+      `ALTER TABLE users ADD COLUMN birth_date VARCHAR(10) NULL`,
+      `ALTER TABLE users ADD COLUMN birthday_sent_year INT NULL`,
+    ],
+  },
 ];
 
 export async function migrate() {

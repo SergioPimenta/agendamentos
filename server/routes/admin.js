@@ -8,8 +8,9 @@ import { z } from 'zod';
 import { config } from '../config.js';
 import { db } from '../db/index.js';
 import { requireAdmin, requireModule, verifyToken } from '../middleware/auth.js';
-import { LEVELS, MODULES, canEnterPanel, hasAccess, normalizePermissions } from '../services/access.js';
+import { LEVELS, MODULES, canEnterPanel, fullAccess, hasAccess, normalizePermissions } from '../services/access.js';
 import { CONSUMING, OCCUPYING, getBusinessHours, inList } from '../services/availability.js';
+import { birthdaysOfMonth } from '../services/birthdays.js';
 import {
   BOOKING_SELECT,
   changeStatus,
@@ -32,6 +33,7 @@ import { getSettings, saveSettings } from '../services/settings.js';
 import { HttpError, asyncHandler, parse } from '../utils/http.js';
 import { sendMail } from '../utils/mailer.js';
 import { DATE_RE, TIME_RE, addDays, daysBetween, isValidDate, nowLocal, nowStamp, toMin, weekdayOf } from '../utils/time.js';
+import { birthDateField } from '../utils/birthDate.js';
 import { monthStatement, presentRoom } from './app.js';
 
 const router = express.Router();
@@ -41,6 +43,7 @@ router.use(verifyToken, requireAdmin);
 router.use('/dashboard', requireModule(['dashboard']));
 router.use('/agenda', requireModule(['agenda']));
 router.use('/bookings', requireModule(['bookings', 'agenda']));
+router.use('/birthdays', requireModule(['birthdays']));
 router.use('/rooms', requireModule(['rooms'], ['agenda', 'bookings']));
 router.use('/upload', requireModule(['rooms']));
 router.use('/plans', requireModule(['plans'], ['clients', 'finance']));
@@ -372,6 +375,7 @@ const userInput = z.object({
   phone: z.string().trim().max(30).optional().default(''),
   document: z.string().trim().max(20).optional().default(''),
   company: z.string().trim().max(120).optional().default(''),
+  birth_date: birthDateField,
   plan_id: z.coerce.number().int().positive().nullable().optional(),
   notes: z.string().trim().max(1000).optional().default(''),
   active: z.boolean().optional().default(true),
@@ -387,6 +391,7 @@ const presentUser = (u) => ({
   phone: u.phone,
   document: u.document,
   company: u.company,
+  birth_date: u.birth_date ?? '',
   plan_id: u.plan_id == null ? null : Number(u.plan_id),
   plan_name: u.plan_name ?? null,
   notes: u.notes || '',
@@ -500,9 +505,9 @@ router.post(
     await assertPlanExists(d.plan_id);
     const access = await resolveAccess(d, null, req.user);
     const r = await db.run(
-      `INSERT INTO users (name, email, password, role, profile_id, phone, document, company, plan_id, notes, active, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [d.name, d.email, await bcrypt.hash(d.password, 10), access.role, access.profile_id, d.phone, d.document, d.company, d.plan_id ?? null, d.notes, d.active ? 1 : 0, nowStamp(), nowStamp()],
+      `INSERT INTO users (name, email, password, role, profile_id, phone, document, company, birth_date, plan_id, notes, active, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [d.name, d.email, await bcrypt.hash(d.password, 10), access.role, access.profile_id, d.phone, d.document, d.company, d.birth_date ?? null, d.plan_id ?? null, d.notes, d.active ? 1 : 0, nowStamp(), nowStamp()],
     );
     res.status(201).json({ user: presentUser(await getUserRow(r.insertId)) });
   }),
@@ -529,8 +534,8 @@ router.put(
     }
 
     await db.run(
-      `UPDATE users SET name = ?, email = ?, role = ?, profile_id = ?, phone = ?, document = ?, company = ?, plan_id = ?, notes = ?, active = ?, updated_at = ? WHERE id = ?`,
-      [d.name, d.email, access.role, access.profile_id, d.phone, d.document, d.company, d.plan_id ?? null, d.notes, d.active ? 1 : 0, nowStamp(), uid],
+      `UPDATE users SET name = ?, email = ?, role = ?, profile_id = ?, phone = ?, document = ?, company = ?, birth_date = ?, plan_id = ?, notes = ?, active = ?, updated_at = ? WHERE id = ?`,
+      [d.name, d.email, access.role, access.profile_id, d.phone, d.document, d.company, d.birth_date === undefined ? (current.birth_date ?? null) : d.birth_date, d.plan_id ?? null, d.notes, d.active ? 1 : 0, nowStamp(), uid],
     );
     if (d.password) await db.run('UPDATE users SET password = ? WHERE id = ?', [await bcrypt.hash(d.password, 10), uid]);
 
@@ -562,6 +567,24 @@ router.post(
   }),
 );
 
+/* ---------------- aniversariantes ---------------- */
+
+router.get(
+  '/birthdays',
+  asyncHandler(async (req, res) => {
+    const now = nowLocal();
+    const { month } = parse(z.object({ month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Mês inválido').optional() }), req.query);
+    const m = month ?? now.date.slice(0, 7);
+    const missing = await db.get("SELECT COUNT(*) AS n FROM users WHERE role = 'client' AND active = 1 AND birth_date IS NULL");
+    res.json({
+      month: m,
+      today: now.date,
+      birthdays: await birthdaysOfMonth(m),
+      without_birth_date: Number(missing.n),
+    });
+  }),
+);
+
 /* ---------------- perfis de usuário (acesso ao painel) ---------------- */
 
 const profileInput = z.object({
@@ -575,7 +598,7 @@ const presentProfile = (p) => ({
   name: p.name,
   description: p.description,
   is_system: Boolean(Number(p.is_system)),
-  permissions: normalizePermissions(p.permissions),
+  permissions: Number(p.is_system) ? fullAccess() : normalizePermissions(p.permissions),
   users_count: Number(p.users_count ?? 0),
 });
 

@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
-  BarChart3, CalendarCheck, CalendarDays, CalendarPlus, DoorOpen, LayoutDashboard, LifeBuoy, LogOut, Menu,
+  BarChart3, Cake, CalendarCheck, CalendarDays, CalendarPlus, DoorOpen, LayoutDashboard, LifeBuoy, LogOut, Menu,
   Mail, QrCode, Receipt, Settings, Wallet, ShieldBan, Tags, UserRound, Users, X, ClipboardList, Leaf,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
@@ -30,6 +30,7 @@ const adminNav: NavItem[] = [
   { to: '/admin/agenda', label: 'Agenda', icon: <CalendarDays size={18} />, module: 'agenda' },
   { to: '/admin/reservas', label: 'Reservas', icon: <ClipboardList size={18} />, module: 'bookings' },
   { to: '/admin/clientes', label: 'Clientes', icon: <Users size={18} />, module: ['clients', 'profiles'] },
+  { to: '/admin/aniversariantes', label: 'Aniversariantes', icon: <Cake size={18} />, module: 'birthdays' },
   { to: '/admin/salas', label: 'Salas', icon: <DoorOpen size={18} />, module: 'rooms' },
   { to: '/admin/planos', label: 'Planos', icon: <Tags size={18} />, module: 'plans' },
   { to: '/admin/bloqueios', label: 'Bloqueios', icon: <ShieldBan size={18} />, module: 'blocks' },

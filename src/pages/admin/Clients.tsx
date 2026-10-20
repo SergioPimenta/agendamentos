@@ -13,7 +13,7 @@ import { fmtDateFull, fmtDuration, fmtMoney, fmtMonth, todayStr } from '../../li
 import { api } from '../../services/api';
 import type { AccessProfile, Booking, Client, Plan, Statement } from '../../types';
 
-const emptyForm = { name: '', email: '', password: '', profile_id: '', phone: '', document: '', company: '', plan_id: '', notes: '', active: true };
+const emptyForm = { name: '', email: '', password: '', profile_id: '', phone: '', document: '', company: '', birth_date: '', plan_id: '', notes: '', active: true };
 
 export default function AdminClients() {
   const toast = useToast();
@@ -132,7 +132,7 @@ function ClientForm({ open, client, plans, profiles, onClose, onSaved, onDelete 
       setError('');
       setF(client ? {
         name: client.name, email: client.email, password: '', profile_id: client.profile_id ? String(client.profile_id) : '', phone: client.phone, document: client.document,
-        company: client.company, plan_id: client.plan_id ? String(client.plan_id) : '', notes: client.notes, active: client.active,
+        company: client.company, birth_date: client.birth_date ?? '', plan_id: client.plan_id ? String(client.plan_id) : '', notes: client.notes, active: client.active,
       } : emptyForm);
     }
   }
@@ -185,6 +185,7 @@ function ClientForm({ open, client, plans, profiles, onClose, onSaved, onDelete 
         <Input label="Telefone / WhatsApp" value={f.phone} onChange={set('phone')} />
         <Input label="Empresa / profissão" value={f.company} onChange={set('company')} />
         <Input label="CPF / CNPJ" value={f.document} onChange={set('document')} />
+        <Input label="Data de nascimento" type="date" min="1900-01-01" max={todayStr()} value={f.birth_date} onChange={set('birth_date')} hint="Usada na lista de aniversariantes e no e-mail de parabéns." />
         <Select label="Plano" value={f.plan_id} onChange={set('plan_id')}>
           <option value="">Sem plano</option>
           {plans.filter((p) => p.active || String(p.id) === f.plan_id).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
