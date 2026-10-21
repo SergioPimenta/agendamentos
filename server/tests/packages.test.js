@@ -202,7 +202,7 @@ describe('pacotes de horas', () => {
     await add(600, addDays(nowLocal().date, -1)); // vencido: não conta
 
     assert.equal((await balance()).minutes_available, 120);
-    const r = await book('09:00', '10:30', weekday(12)); // 90 min: 60 do que vence primeiro + 30 do sem validade
+    const r = await book('09:00', '10:30', weekday(21)); // 90 min: 60 do que vence primeiro + 30 do sem validade
     assert.equal(r.body.bookings[0].package_minutes, 90);
     const used = await db.query('SELECT purchase_id, minutes FROM package_usage ORDER BY purchase_id');
     assert.deepEqual(used.map((u) => [Number(u.purchase_id), Number(u.minutes)]), [[forever, 30], [soon, 60]]);

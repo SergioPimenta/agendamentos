@@ -3,13 +3,13 @@
   "version": "1.0.0",
   "description": "API do sistema de agendamento de salas do harmonizeoser",
   "type": "module",
-  "main": "index.js",
+  "main": "start.js",
   "engines": {
     "node": ">=22.5"
   },
   "scripts": {
-    "start": "node index.js",
-    "dev": "node --watch --env-file-if-exists=.env index.js",
+    "start": "node start.js",
+    "dev": "node --watch --env-file-if-exists=.env start.js",
     "test": "node --test"
   },
   "dependencies": {

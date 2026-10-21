@@ -98,7 +98,8 @@ O endereço do webhook leva um segredo e o servidor precisa ser acessível pela 
 
 ```
 server/
-  index.js            app Express (helmet, CORS, rotas, serve dist/)
+  index.js            app Express (createApp: helmet, CORS, rotas, serve dist/)
+  start.js            sobe o servidor e as rotinas em segundo plano (npm start / Hostinger)
   config.js           variáveis de ambiente
   db/                 adaptador SQLite/MySQL, migrações e seed
   services/           disponibilidade, reservas (preço, recorrência, cancelamento), configurações
@@ -109,6 +110,35 @@ src/
   components/booking  calendário, grade de horários, formulário de reserva, agenda (TimeGrid)
   pages/auth|app|admin
 ```
+
+## Deploy na Hostinger (Node.js Web App, em um subdomínio)
+
+Funciona em planos com *Node.js Web Apps* (Business ou Cloud). Um único processo serve a API e o front-end, no subdomínio que você escolher
+(ex.: `agenda.harmonizeoser.com.br`), enquanto o site institucional continua no domínio principal.
+
+1. **Subdomínio:** hPanel → *Domínios* → *Subdomínios* → crie `agenda` (ou o nome que preferir). O SSL é emitido sozinho.
+2. **Banco de dados (escolha um):**
+   - **Manter o Postgres atual (Neon):** use a mesma `DATABASE_URL` da Vercel. Os dados continuam todos lá.
+   - **MySQL da Hostinger:** hPanel → *Bancos de dados* → crie o banco e o usuário; use `DB_HOST` (normalmente `localhost`), `DB_USER`, `DB_PASSWORD`, `DB_NAME`.
+   - **Não use SQLite** na Hostinger: a pasta do app é recriada a cada deploy e o arquivo do banco se perderia.
+3. **Criar o app:** hPanel → *Sites* → *Adicionar site* → *Node.js web app* → *Importar repositório Git* → conecte o GitHub e escolha este repositório (branch `main`).
+4. **Configurações do deploy:**
+   - Framework: **Other** · Node.js: **22** (ou 24)
+   - Comando de build: `build`
+   - Arquivo de entrada (*Entry file*): `server/start.js`
+   - Deixe o diretório de saída vazio.
+   - O `npm install` da raiz já instala também as dependências de `server/` (script `postinstall`).
+5. **Variáveis de ambiente** (na mesma tela): `NODE_ENV=production`, `JWT_SECRET` (24+ caracteres), `APP_URL` (ex.: `https://agenda.harmonizeoser.com.br`),
+   `TRUST_PROXY=1`, o banco escolhido (`DATABASE_URL` **ou** `DB_*`), `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `CRON_SECRET`, `UPLOADS_DIR`
+   (pasta fora do código para as fotos das salas, ex.: `/home/SEU_USUARIO/uploads-agendamentos`; crie-a antes), e-mail (`EMAIL_HOST=smtp.hostinger.com`,
+   `EMAIL_PORT=465`, `EMAIL_USER`, `EMAIL_PASS`, `EMAIL_FROM`, `NOTIFY_EMAIL`) e, para pagamentos, `PAGARME_SECRET_KEY`, `PAGARME_PUBLIC_KEY`, `PAGARME_WEBHOOK_TOKEN`.
+6. **Domínio:** ao criar o app, escolha o subdomínio criado no passo 1 como endereço do site.
+7. **Rotina automática (recomendado):** hPanel → *Avançado* → *Cron Jobs*, a cada 5 minutos:
+   `curl -fsS -H "Authorization: Bearer SEU_CRON_SECRET" https://agenda.harmonizeoser.com.br/api/cron/sweep`
+   (libera horários não pagos, encerra sessões esquecidas, envia e-mails de aniversário e mantém o app acordado).
+8. **Pagar.me:** atualize o webhook para `https://agenda.harmonizeoser.com.br/api/webhooks/pagarme/<PAGARME_WEBHOOK_TOKEN>` e cadastre o novo endereço do site para a tokenização do cartão.
+
+Cada `git push` na `main` redeploya sozinho (variáveis e `UPLOADS_DIR` permanecem). Faça backup do banco e da pasta de uploads.
 
 ## Deploy na Vercel
 

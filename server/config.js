@@ -55,6 +55,7 @@ export const config = {
   // Segredo do Vercel Cron (header Authorization: Bearer ...) para a rotina de limpeza em /api/cron/sweep.
   cronSecret: process.env.CRON_SECRET || '',
   // Na Vercel o disco do projeto é somente leitura; /tmp aceita escrita, mas some entre execuções.
-  uploadsDir: process.env.VERCEL ? path.join(os.tmpdir(), 'uploads') : path.join(__dirname, 'uploads'),
+  // UPLOADS_DIR aponta para uma pasta fora do código (ex.: na Hostinger, para as fotos sobreviverem a cada novo deploy).
+  uploadsDir: process.env.UPLOADS_DIR || (process.env.VERCEL ? path.join(os.tmpdir(), 'uploads') : path.join(__dirname, 'uploads')),
   distDir: path.join(__dirname, '..', 'dist'),
 };

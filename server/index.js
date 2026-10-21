@@ -74,19 +74,3 @@ export async function createApp() {
   app.use(errorHandler);
   return app;
 }
-
-if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'))) {
-  const app = await createApp();
-  app.listen(config.port, () => console.log(`[api] rodando em http://localhost:${config.port} (${config.dbDriver})`));
-
-  // Encerra sozinho (sem excedente) quem esqueceu o check-out. Roda a cada 5 minutos.
-  // Libera os horários cujo prazo para pagar acabou (a cada minuto).
-  setInterval(() => releaseExpiredHolds().catch((e) => console.error('[reservas] falha ao liberar horários:', e.message)), 60 * 1000).unref();
-
-  setInterval(() => autoCloseSessions().catch((e) => console.error('[sessões] falha ao encerrar:', e.message)), 5 * 60 * 1000).unref();
-
-  // E-mail de aniversário: confere a cada hora (e logo após ligar, caso o servidor tenha ficado fora do ar de manhã).
-  const birthdays = () => sendBirthdayEmails().catch((e) => console.error('[aniversários] falha ao enviar:', e.message));
-  setTimeout(birthdays, 30 * 1000).unref();
-  setInterval(birthdays, 60 * 60 * 1000).unref();
-}
