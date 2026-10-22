@@ -48,6 +48,9 @@ const HOST_VARS = [
   { name: 'recorrencia', label: 'Frase sobre repetição semanal (vazia se for uma vez só)' },
 ];
 
+// Só nos e-mails enviados aos convidados.
+const GUEST_VARS = [...HOST_VARS, { name: 'convidado', label: 'Nome do convidado (ou "convidado(a)" se não foi informado)' }];
+
 const SESSION_VARS = [
   { name: 'entrada', label: 'Hora do check-in' },
   { name: 'saida', label: 'Hora do check-out' },
@@ -284,11 +287,11 @@ export const TEMPLATES = [
     description: 'Enviado às pessoas convidadas quando a reserva é confirmada, com o evento para salvar no calendário.',
     recipient: 'Convidado',
     details: true,
-    variables: [...HOST_VARS],
+    variables: [...GUEST_VARS],
     defaults: {
       subject: 'Você foi convidado(a) — {{sala}}, {{data}}',
       title: 'Você foi convidado(a)',
-      body: 'Olá! {{anfitriao}} convidou você para um encontro no {{empresa}}.\n\nConfira os detalhes abaixo e salve o evento no seu calendário pelo arquivo em anexo.\n\n{{recorrencia}}',
+      body: 'Olá, {{convidado}}! {{anfitriao}} convidou você para um encontro no {{empresa}}.\n\nConfira os detalhes abaixo e salve o evento no seu calendário pelo arquivo em anexo.\n\n{{recorrencia}}',
       cta_label: '',
     },
   },
@@ -299,11 +302,11 @@ export const TEMPLATES = [
     description: 'Enviado aos convidados quando a data, o horário ou a sala da reserva mudam.',
     recipient: 'Convidado',
     details: true,
-    variables: [...HOST_VARS],
+    variables: [...GUEST_VARS],
     defaults: {
       subject: 'Reserva atualizada — {{sala}}, {{data}}',
       title: 'O encontro foi atualizado',
-      body: 'Olá! {{anfitriao}} alterou a reserva para a qual você foi convidado(a). Confira os novos detalhes:',
+      body: 'Olá, {{convidado}}! {{anfitriao}} alterou a reserva para a qual você foi convidado(a). Confira os novos detalhes:',
       cta_label: '',
     },
   },
@@ -314,11 +317,11 @@ export const TEMPLATES = [
     description: 'Enviado aos convidados quando a reserva é cancelada.',
     recipient: 'Convidado',
     details: true,
-    variables: [...HOST_VARS],
+    variables: [...GUEST_VARS],
     defaults: {
       subject: 'Reserva cancelada — {{sala}}, {{data}}',
       title: 'O encontro foi cancelado',
-      body: 'Olá! A reserva de {{anfitriao}} para {{data}}, às {{horario_inicio}}, foi cancelada. Você não precisa comparecer.',
+      body: 'Olá, {{convidado}}! A reserva de {{anfitriao}} para {{data}}, às {{horario_inicio}}, foi cancelada. Você não precisa comparecer.',
       cta_label: '',
     },
   },
@@ -498,6 +501,7 @@ export function sampleData(key, viewer = {}) {
     quantidade: '4',
     anfitriao: 'Maria Souza',
     anfitriao_email: 'maria@exemplo.com.br',
+    convidado: 'Carlos',
     titulo: 'Reunião de equipe',
     recorrencia: 'Este encontro se repete toda semana (4 vezes).',
     entrada: '14:00',

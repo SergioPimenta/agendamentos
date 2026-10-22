@@ -3,7 +3,7 @@ import { db } from '../db/index.js';
 import { config } from '../config.js';
 import { shownEmail } from '../utils/email.js';
 import { HttpError } from '../utils/http.js';
-import { MAX_GUESTS, guestsToDb, normalizeGuests, parseGuests } from '../utils/guests.js';
+import { MAX_GUESTS, guestsToDb, normalizeGuestList, parseGuestList, parseGuests } from '../utils/guests.js';
 import { bookingToIcs } from '../utils/ics.js';
 import { sendTemplated } from './emailTemplates.js';
 import { onlinePaymentsReady } from './settings.js';
@@ -73,6 +73,7 @@ export function serializeBooking(row, { rules, now = nowLocal(), isAdmin = false
   };
   if (isAdmin || own) {
     out.guests = parseGuests(row.guests);
+    out.guest_list = parseGuestList(row.guests);
     out.user = {
       id: Number(row.user_id),
       name: row.user_name,
@@ -179,8 +180,7 @@ export async function createBookings({ actor, input }) {
 
   const status = !isAdmin && rules.require_approval ? 'pending' : 'confirmed';
   const seriesId = dates.length > 1 ? `S-${randomCode(8)}` : null;
-  const guests = normalizeGuests(input.guests, user.email);
-  const guestsJson = guestsToDb(guests);
+  const guestsJson = guestsToDb(normalizeGuestList(input.guests, user.email));
   // Pagamento no ato: só o cliente, em reserva única, quando a cobrança online está ligada e há valor a cobrar.
   const mayHold = !isAdmin && dates.length === 1 && rules.pay_on_booking && onlinePaymentsReady(rules);
   let held = false;
@@ -275,8 +275,10 @@ export async function updateBooking({ actor, id, input }) {
   const attendees = input.attendees ?? Number(current.attendees);
   if (attendees > room.capacity) throw new HttpError(422, `Esta sala comporta até ${room.capacity} pessoas.`);
 
-  const priorGuests = parseGuests(current.guests);
-  const nextGuests = input.guests === undefined ? priorGuests : normalizeGuests(input.guests, user.email);
+  const priorList = parseGuestList(current.guests);
+  const priorGuests = priorList.map((g) => g.email);
+  const nextList = input.guests === undefined ? priorList : normalizeGuestList(input.guests, user.email);
+  const nextGuests = nextList.map((g) => g.email);
 
   const date = input.date ?? current.date;
   const start = input.start_time ?? current.start_time;
@@ -302,7 +304,7 @@ export async function updateBooking({ actor, id, input }) {
       [
         room.id, user.id, date, start, end, `${date} ${start}`, `${date} ${end}`,
         input.title ?? current.title, input.notes ?? current.notes ?? '', attendees, minutes,
-        pricing.included_minutes, pricing.package_minutes, pricing.price_cents, payment, pending ? 'pending' : current.status, guestsToDb(nextGuests), nowStamp(), id,
+        pricing.included_minutes, pricing.package_minutes, pricing.price_cents, payment, pending ? 'pending' : current.status, guestsToDb(nextList), nowStamp(), id,
       ],
     );
     await savePackageUse(tx, id, pricing.package_allocations);
@@ -452,14 +454,16 @@ const guestRows = (row, address) => [
 /** Avisa os convidados (todos, ou só `only`) com o modelo `key`. */
 async function notifyGuests(key, id, only, extra = {}, withCalendar = false) {
   const row = await getBookingRow(id);
-  const list = only ?? parseGuests(row.guests);
+  const saved = parseGuestList(row.guests);
+  const nameOf = (email) => saved.find((g) => g.email === email)?.name ?? '';
+  const list = only ?? saved.map((g) => g.email);
   if (!list.length) return;
   const rules = await getSettings();
   const attachments = withCalendar
     ? [{ filename: `reserva-${row.code}.ics`, content: bookingToIcs(row, { businessName: rules.business_name, address: rules.business_address }), contentType: 'text/calendar; charset=utf-8; method=PUBLISH' }]
     : undefined;
   for (const to of list.slice(0, MAX_GUESTS)) {
-    await sendTemplated(key, { to, vars: guestVars(row, extra), rows: guestRows(row, rules.business_address), attachments });
+    await sendTemplated(key, { to, vars: guestVars(row, { convidado: nameOf(to) || 'convidado(a)', ...extra }), rows: guestRows(row, rules.business_address), attachments });
   }
 }
 

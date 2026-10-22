@@ -5,12 +5,12 @@ import { useDebounced } from '../../hooks/useApi';
 import { cn } from '../../lib/cn';
 import { addDays, fmtDateLong, fmtDuration, fmtMoney, fromMin, toMin, todayStr, weekdayOf } from '../../lib/format';
 import { api, ApiError } from '../../services/api';
-import type { Booking, BusinessHours, Client, PaymentConfig, PublicSettings, Room } from '../../types';
+import type { Booking, BusinessHours, Client, Guest, PaymentConfig, PublicSettings, Room } from '../../types';
 import { Button } from '../ui/Button';
 import { Input, Select, Textarea } from '../ui/Form';
 import { useToast } from '../ui/Feedback';
 import { Modal } from '../ui/Modal';
-import { GuestsField } from './GuestsField';
+import { GuestsField, cleanGuests, guestsError } from './GuestsField';
 import { PaymentStep } from './PaymentStep';
 
 interface Quote {
@@ -57,7 +57,7 @@ export function BookingFormModal({ open, onClose, rooms, hours, settings, admin,
   const [quoting, setQuoting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [saving, setSaving] = useState(false);
-  const [guests, setGuests] = useState<string[]>([]);
+  const [guests, setGuests] = useState<Guest[]>([]);
   // Pagamento no ato da reserva (Pix / cartão), quando a administração ligou.
   const [cfg, setCfg] = useState<PaymentConfig | null>(null);
   const [stage, setStage] = useState<'form' | 'pay'>('form');
@@ -87,7 +87,7 @@ export function BookingFormModal({ open, onClose, rooms, hours, settings, admin,
       repeat_weeks: 0,
       skip_conflicts: true,
     });
-    setGuests(booking?.guests ?? []);
+    setGuests(booking?.guest_list ?? (booking?.guests ?? []).map((email) => ({ name: '', email })));
     setQuote(null);
     setQuoteError('');
     setSubmitError('');
@@ -174,12 +174,14 @@ export function BookingFormModal({ open, onClose, rooms, hours, settings, admin,
   const submit = async (e?: FormEvent) => {
     e?.preventDefault();
     if (blocked) return;
+    const gErr = guestsError(guests, admin ? undefined : user?.email);
+    if (gErr) return setSubmitError(gErr);
     setSubmitError('');
     setSaving(true);
     try {
       const base = {
         room_id: form.room_id, date: form.date, start_time: form.start_time, end_time: form.end_time,
-        title: form.title, notes: form.notes, attendees: Number(form.attendees) || 1, guests,
+        title: form.title, notes: form.notes, attendees: Number(form.attendees) || 1, guests: cleanGuests(guests),
         ...(admin && form.user_id ? { user_id: form.user_id } : {}),
       };
       if (editing && booking) {

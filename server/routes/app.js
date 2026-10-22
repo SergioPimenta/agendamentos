@@ -260,8 +260,11 @@ router.post(
 
 /* ---------------- reservas ---------------- */
 
-/** E-mails de convidados (até 10), já em minúsculas. */
-const guestList = z.array(z.string().trim().toLowerCase().email('E-mail de convidado inválido').max(160)).max(10, 'Até 10 convidados por reserva.');
+const guestEmail = z.string().trim().toLowerCase().email('E-mail de convidado inválido').max(160);
+/** Convidados (até 10): só o e-mail, ou { name, email }. */
+const guestList = z
+  .array(z.union([guestEmail, z.object({ name: z.string().trim().max(120).optional().default(''), email: guestEmail })]))
+  .max(10, 'Até 10 convidados por reserva.');
 
 const bookingInput = z.object({
   room_id: z.coerce.number().int().positive('Escolha uma sala'),

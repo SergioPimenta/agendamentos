@@ -131,6 +131,8 @@ export interface Booking {
   hold_until: string | null;
   /** E-mails convidados (só o dono e a administração enxergam). */
   guests?: string[];
+  /** Convidados com nome e e-mail. */
+  guest_list?: Guest[];
   checked_in_at: string | null;
   check_in_method: 'app' | 'qr' | 'admin' | null;
   checked_out_at: string | null;
@@ -258,6 +260,8 @@ export interface Statement {
   totals: { bookings: number; minutes: number; amount_cents: number; paid_cents: number; pending_cents: number; overtime_cents: number };
   bookings: Booking[];
 }
+
+export interface Guest { name: string; email: string }
 
 export interface Client {
   id: number;

@@ -6,12 +6,12 @@ import { useApi, useDebounced } from '../../hooks/useApi';
 import { cn } from '../../lib/cn';
 import { addDays, addMonths, fmtDateLong, fmtDuration, fmtMoney, fromMin, toMin, todayStr, weekdayOf } from '../../lib/format';
 import { api, ApiError } from '../../services/api';
-import type { Booking, BusinessHours, DayAvailability, MonthDay, PaymentConfig, PublicSettings, Room } from '../../types';
+import type { Booking, BusinessHours, DayAvailability, Guest, MonthDay, PaymentConfig, PublicSettings, Room } from '../../types';
 import { Button } from '../ui/Button';
 import { Skeleton, useToast } from '../ui/Feedback';
 import { Input, Select, Textarea } from '../ui/Form';
 import { Card, CardHeader } from '../ui/Misc';
-import { GuestsField } from './GuestsField';
+import { GuestsField, cleanGuests, guestsError } from './GuestsField';
 import { PaymentStep } from './PaymentStep';
 import { SlotStrip } from './SlotStrip';
 
@@ -47,7 +47,7 @@ export function RoomBookingPanel({
   const [notes, setNotes] = useState('');
   const [repeat, setRepeat] = useState(0);
   const [more, setMore] = useState(false);
-  const [guests, setGuests] = useState<string[]>([]);
+  const [guests, setGuests] = useState<Guest[]>([]);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [quoteError, setQuoteError] = useState('');
   const [quoting, setQuoting] = useState(false);
@@ -175,12 +175,14 @@ export function RoomBookingPanel({
   const submit = async () => {
     if (blocked) return;
     if (!user) return goLogin();
+    const gErr = guestsError(guests, user.email);
+    if (gErr) return setSubmitError(gErr);
     setSubmitError('');
     setSaving(true);
     try {
       const res = await api.post<{ bookings: Booking[]; skipped: { date: string }[]; payment_required?: boolean }>('/bookings', {
         room_id: room.id, date, start_time: start, end_time: end, title, notes,
-        attendees: Number(attendees) || 1, repeat_weeks: repeat, skip_conflicts: true, guests,
+        attendees: Number(attendees) || 1, repeat_weeks: repeat, skip_conflicts: true, guests: cleanGuests(guests),
       });
       if (res.payment_required) {
         setHeld(res.bookings[0]); // horário segurado: segue para o pagamento, aqui mesmo

@@ -83,6 +83,18 @@ describe('convidados da reserva', () => {
     assert.equal(sentTo('teste@exemplo.com').filter((m) => /convidado/i.test(m.subject)).length, 0);
   });
 
+  it('guarda o nome de cada convidado e o usa na saudação do convite', async () => {
+    clearOutbox();
+    const r = await book({ room_id: rooms[2].id, start_time: '09:00', end_time: '10:00', guests: [{ name: '  Dona   Maria  ', email: 'Maria@Exemplo.com' }, 'sem-nome@exemplo.com', { name: 'Repetida', email: 'maria@exemplo.com' }] });
+    assert.equal(r.status, 201);
+    assert.deepEqual(r.booking.guest_list, [{ name: 'Dona Maria', email: 'maria@exemplo.com' }, { name: '', email: 'sem-nome@exemplo.com' }]);
+    assert.deepEqual(r.booking.guests, ['maria@exemplo.com', 'sem-nome@exemplo.com']); // lista só de e-mails continua disponível
+    await settle();
+    assert.match(sentTo('maria@exemplo.com')[0].html, /Olá, Dona Maria!/);
+    assert.match(sentTo('sem-nome@exemplo.com')[0].html, /Olá, convidado\(a\)!/);
+    assert.equal((await book({ room_id: rooms[2].id, start_time: '11:00', end_time: '12:00', guests: [{ name: 'X', email: 'invalido' }] })).status, 400);
+  });
+
   it('recusa e-mail inválido e mais de 10 convidados', async () => {
     assert.equal((await book({ guests: ['nao-e-email'] })).status, 400);
     const many = Array.from({ length: 11 }, (_, i) => `pessoa${i}@exemplo.com`);
