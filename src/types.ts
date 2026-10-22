@@ -269,6 +269,16 @@ export interface Client {
   phone: string;
   document: string;
   company: string;
+  /** Cliente cadastrado sem e-mail (ex.: vindo de outro sistema): `email` vem vazio e ele ainda não entra no sistema. */
+  has_email: boolean;
+  /** Número do cliente no sistema de onde foi importado. */
+  legacy_code: string;
+  city: string;
+  state: string;
+  /** Etiquetas separadas por vírgula (ex.: "Eventos, Pré-Pago"). */
+  tags: string;
+  /** Data (AAAA-MM-DD) em que começou no plano atual, quando conhecida. */
+  plan_since: string;
   birth_date: string;
   plan_id: number | null;
   plan_name: string | null;

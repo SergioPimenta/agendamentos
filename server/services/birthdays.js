@@ -1,4 +1,5 @@
 import { db } from '../db/index.js';
+import { isPlaceholderEmail, shownEmail } from '../utils/email.js';
 import { nowLocal } from '../utils/time.js';
 import { sendTemplated } from './emailTemplates.js';
 
@@ -40,7 +41,7 @@ export async function birthdaysOfMonth(month) {
     return {
       id: Number(u.id),
       name: u.name,
-      email: u.email,
+      email: shownEmail(u.email),
       phone: u.phone,
       company: u.company,
       plan_name: u.plan_name ?? null,
@@ -75,6 +76,7 @@ export async function sendBirthdayEmails({ force = false, send = sendTemplated }
 
   let sent = 0;
   for (const u of rows) {
+    if (isPlaceholderEmail(u.email)) continue; // cliente sem e-mail: não há para onde enviar
     const result = await send('birthday', {
       to: u.email,
       vars: {

@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { db } from '../db/index.js';
 import { config } from '../config.js';
+import { shownEmail } from '../utils/email.js';
 import { HttpError } from '../utils/http.js';
 import { MAX_GUESTS, guestsToDb, normalizeGuests, parseGuests } from '../utils/guests.js';
 import { bookingToIcs } from '../utils/ics.js';
@@ -75,7 +76,7 @@ export function serializeBooking(row, { rules, now = nowLocal(), isAdmin = false
     out.user = {
       id: Number(row.user_id),
       name: row.user_name,
-      email: row.user_email,
+      email: shownEmail(row.user_email),
       phone: row.user_phone,
       company: row.user_company,
     };

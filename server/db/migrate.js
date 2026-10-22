@@ -345,6 +345,18 @@ const migrations = [
       `ALTER TABLE package_purchases ADD COLUMN room_ids TEXT NULL`,
     ],
   },
+  {
+    // Dados dos clientes trazidos de outros sistemas: código de origem, cidade/UF, etiquetas e início do plano.
+    id: '016_client_import_fields',
+    statements: () => [
+      `ALTER TABLE users ADD COLUMN legacy_code VARCHAR(20) NULL`,
+      `ALTER TABLE users ADD COLUMN city VARCHAR(80) NOT NULL DEFAULT ''`,
+      `ALTER TABLE users ADD COLUMN state VARCHAR(2) NOT NULL DEFAULT ''`,
+      `ALTER TABLE users ADD COLUMN tags VARCHAR(255) NOT NULL DEFAULT ''`,
+      `ALTER TABLE users ADD COLUMN plan_since VARCHAR(10) NULL`,
+      `CREATE INDEX idx_users_legacy_code ON users (legacy_code)`,
+    ],
+  },
 ];
 
 export async function migrate() {

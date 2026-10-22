@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { db } from '../db/index.js';
+import { shownEmail } from '../utils/email.js';
 import { HttpError } from '../utils/http.js';
 import { addDays, nowLocal, nowStamp } from '../utils/time.js';
 import { CONSUMING, inList } from './availability.js';
@@ -70,7 +71,7 @@ export async function loadReceivables(rules, today = nowLocal().date) {
     rows.push({
       kind: 'invoice',
       key: `inv:${i.user_id}:${i.month}`,
-      user: { id: Number(i.user_id), name: i.user_name, email: i.user_email, company: i.user_company },
+      user: { id: Number(i.user_id), name: i.user_name, email: shownEmail(i.user_email), company: i.user_company },
       month: i.month,
       description: `Fatura de ${i.month.slice(5)}/${i.month.slice(0, 4)}`,
       category: 'Reservas de salas',
@@ -88,7 +89,7 @@ export async function loadReceivables(rules, today = nowLocal().date) {
       kind: 'manual',
       key: `man:${r.id}`,
       id: Number(r.id),
-      user: r.user_id ? { id: Number(r.user_id), name: r.user_name, email: r.user_email, company: r.user_company } : null,
+      user: r.user_id ? { id: Number(r.user_id), name: r.user_name, email: shownEmail(r.user_email), company: r.user_company } : null,
       description: r.description,
       category: r.category,
       amount_cents: Number(r.amount_cents),

@@ -1,4 +1,5 @@
 import { db } from '../db/index.js';
+import { shownEmail } from '../utils/email.js';
 import { HttpError } from '../utils/http.js';
 import { addDays, addMinutesAt, minutesBetween, nowLocal, nowStamp } from '../utils/time.js';
 import { BOOKING_SELECT, formatBRL, formatDateBR, getBookingRow, serializeBooking } from './bookings.js';
@@ -21,7 +22,7 @@ const firstName = (name = '') => name.trim().split(' ')[0];
 const sessionVars = (row, extra = {}) => ({
   nome: firstName(row.user_name),
   nome_completo: row.user_name,
-  email: row.user_email,
+  email: shownEmail(row.user_email),
   sala: row.room_name,
   data: formatDateBR(row.date),
   horario_inicio: row.start_time,

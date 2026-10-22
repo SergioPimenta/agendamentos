@@ -1,4 +1,5 @@
 import { db } from '../db/index.js';
+import { shownEmail } from '../utils/email.js';
 import { HttpError } from '../utils/http.js';
 import { addDays, nowLocal, nowStamp } from '../utils/time.js';
 import { getSettings, onlinePaymentsReady } from './settings.js';
@@ -254,7 +255,7 @@ export async function listPurchases(limit = 100) {
       id: Number(p.id),
       user_id: Number(p.user_id),
       user_name: p.user_name,
-      user_email: p.user_email,
+      user_email: shownEmail(p.user_email),
       name: p.name,
       minutes_total: Number(p.minutes_total),
       minutes_left: p.status === 'paid' ? Math.max(0, Number(p.used_left)) : Number(p.minutes_total),
@@ -354,7 +355,7 @@ export async function bankOverview() {
     return {
       user_id: uid,
       name: u?.name ?? '—',
-      email: u?.email ?? '',
+      email: shownEmail(u?.email),
       phone: u?.phone ?? '',
       minutes_available: mine.reduce((a, l) => a + l.remaining, 0),
       lots: mine,

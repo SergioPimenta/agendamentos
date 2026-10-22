@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Mail, Pencil, Phone, Plus, Trash2, Users } from 'lucide-react';
+import { Mail, MapPin, Pencil, Phone, Plus, Trash2, Upload, Users } from 'lucide-react';
 import { BookingDetail } from '../../components/booking/BookingDetail';
 import { BookingRow } from '../../components/booking/BookingRow';
 import { Button } from '../../components/ui/Button';
@@ -11,9 +11,10 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useApi, useDebounced } from '../../hooks/useApi';
 import { fmtDateFull, fmtDuration, fmtMoney, fmtMonth, todayStr } from '../../lib/format';
 import { api } from '../../services/api';
+import { ImportClientsModal } from './ImportClients';
 import type { AccessProfile, Booking, Client, Plan, Statement } from '../../types';
 
-const emptyForm = { name: '', email: '', password: '', profile_id: '', phone: '', document: '', company: '', birth_date: '', plan_id: '', notes: '', active: true };
+const emptyForm = { name: '', email: '', password: '', profile_id: '', phone: '', document: '', company: '', city: '', state: '', tags: '', birth_date: '', plan_id: '', notes: '', active: true };
 
 export default function AdminClients() {
   const toast = useToast();
@@ -26,6 +27,7 @@ export default function AdminClients() {
   const [active, setActive] = useState('');
   const [detailId, setDetailId] = useState<number | null>(null);
   const [form, setForm] = useState<{ client?: Client } | null>(null);
+  const [importing, setImporting] = useState(false);
 
   const list = useApi(() => api.get<{ users: Client[] }>('/admin/users', { q, plan_id: plan, active }), [q, plan, active]);
   const plans = useApi(() => api.get<{ plans: Plan[] }>('/admin/plans'), []);
@@ -39,11 +41,11 @@ export default function AdminClients() {
         eyebrow="Pessoas"
         title="Clientes"
         description="Quem usa o espaço, em qual plano e quando reservou pela última vez."
-        actions={canEditClients && <Button icon={<Plus size={16} />} onClick={() => setForm({})}>Novo cliente</Button>}
+        actions={canEditClients && (<><Button variant="secondary" icon={<Upload size={16} />} onClick={() => setImporting(true)}>Importar clientes</Button><Button icon={<Plus size={16} />} onClick={() => setForm({})}>Novo cliente</Button></>)}
       />
 
       <div className="mb-5 grid gap-3 sm:grid-cols-[1.6fr_1fr_1fr]">
-        <SearchInput placeholder="Buscar por nome, e-mail, empresa…" value={text} onChange={(e) => setText(e.target.value)} aria-label="Buscar" />
+        <SearchInput placeholder="Buscar por nome, e-mail, empresa, cidade, etiqueta…" value={text} onChange={(e) => setText(e.target.value)} aria-label="Buscar" />
         <Select aria-label="Plano" value={plan} onChange={(e) => setPlan(e.target.value)}>
           <option value="">Todos os planos</option>
           {plans.data?.plans.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -69,12 +71,12 @@ export default function AdminClients() {
                     <Avatar name={c.name} size={36} />
                     <div className="min-w-0">
                       <p className="truncate font-medium">{c.name} {c.role === 'admin' && <Badge tone="ink" className="ml-1">{c.profile_name ?? 'admin'}</Badge>}</p>
-                      <p className="truncate text-[12px] text-stone">{c.company || c.email}</p>
+                      <p className="truncate text-[12px] text-stone">{c.company || c.email || c.city}</p>
                     </div>
                   </div>
                 </Td>
-                <Td><span className="block text-[13px]">{c.email}</span><span className="text-[12px] text-stone">{c.phone || '—'}</span></Td>
-                <Td>{c.plan_name ? <Badge tone="sage">{c.plan_name}</Badge> : <span className="text-stone-light">—</span>}</Td>
+                <Td><span className={`block text-[13px] ${c.has_email ? '' : 'text-stone-light'}`}>{c.has_email ? c.email : 'Sem e-mail'}</span><span className="text-[12px] text-stone">{c.phone || '—'}{c.city ? ` · ${c.city}${c.state ? `/${c.state}` : ''}` : ''}</span></Td>
+                <Td>{c.plan_name ? <Badge tone="sage">{c.plan_name}</Badge> : <span className="text-stone-light">—</span>}{c.tags && <span className="mt-1 block text-[11.5px] text-stone">{c.tags}</span>}</Td>
                 <Td>{c.bookings_count}</Td>
                 <Td>{c.next_booking ? `${fmtDateFull(c.next_booking.slice(0, 10))} ${c.next_booking.slice(11)}` : '—'}</Td>
                 <Td>{c.active ? <Badge tone="sage">Ativo</Badge> : <Badge tone="rose">Inativo</Badge>}</Td>
@@ -84,6 +86,7 @@ export default function AdminClients() {
         </DataTable>
       )}
 
+      <ImportClientsModal open={importing} onClose={() => setImporting(false)} onDone={list.reload} />
       <ClientDetail
         id={detailId}
         onClose={() => setDetailId(null)}
@@ -132,7 +135,7 @@ function ClientForm({ open, client, plans, profiles, onClose, onSaved, onDelete 
       setError('');
       setF(client ? {
         name: client.name, email: client.email, password: '', profile_id: client.profile_id ? String(client.profile_id) : '', phone: client.phone, document: client.document,
-        company: client.company, birth_date: client.birth_date ?? '', plan_id: client.plan_id ? String(client.plan_id) : '', notes: client.notes, active: client.active,
+        company: client.company, city: client.city ?? '', state: client.state ?? '', tags: client.tags ?? '', birth_date: client.birth_date ?? '', plan_id: client.plan_id ? String(client.plan_id) : '', notes: client.notes, active: client.active,
       } : emptyForm);
     }
   }
@@ -180,11 +183,14 @@ function ClientForm({ open, client, plans, profiles, onClose, onSaved, onDelete 
       <form id="client-form" onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
         {error && <div role="alert" className="rounded-xl border border-rose/25 bg-rose-dim px-4 py-3 text-[13px] text-rose sm:col-span-2">{error}</div>}
         <Input containerClassName="sm:col-span-2" label="Nome completo" required value={f.name} onChange={set('name')} />
-        <Input label="E-mail" type="email" required value={f.email} onChange={set('email')} />
-        <Input label={client ? 'Nova senha' : 'Senha inicial'} type="password" autoComplete="new-password" required={!client} minLength={8} hint={client ? 'Deixe em branco para manter' : 'Mínimo de 8 caracteres'} value={f.password} onChange={set('password')} />
+        <Input label="E-mail" type="email" value={f.email} onChange={set('email')} hint={client && !client.has_email ? 'Sem e-mail: informe um para o cliente poder entrar e receber mensagens.' : client ? undefined : 'Pode ficar em branco: o cliente não entra sozinho, a recepção reserva por ele.'} />
+        <Input label={client ? 'Nova senha' : 'Senha inicial'} type="password" autoComplete="new-password" required={!client && !!f.email} minLength={8} hint={client ? 'Deixe em branco para manter' : 'Obrigatória com e-mail; mínimo de 8 caracteres'} value={f.password} onChange={set('password')} />
         <Input label="Telefone / WhatsApp" value={f.phone} onChange={set('phone')} />
-        <Input label="Empresa / profissão" value={f.company} onChange={set('company')} />
+        <Input label="Nome fantasia / empresa / profissão" value={f.company} onChange={set('company')} />
         <Input label="CPF / CNPJ" value={f.document} onChange={set('document')} />
+        <Input label="Cidade" maxLength={80} value={f.city} onChange={set('city')} />
+        <Input label="UF" maxLength={2} value={f.state} onChange={set('state')} hint="Ex.: PR" />
+        <Input containerClassName="sm:col-span-2" label="Etiquetas" maxLength={255} value={f.tags} onChange={set('tags')} hint="Separe por vírgula. Ex.: Eventos, Pré-Pago" />
         <Input label="Data de nascimento" type="date" min="1900-01-01" max={todayStr()} value={f.birth_date} onChange={set('birth_date')} hint="Usada na lista de aniversariantes e no e-mail de parabéns." />
         <Select label="Plano" value={f.plan_id} onChange={set('plan_id')}>
           <option value="">Sem plano</option>
@@ -208,6 +214,7 @@ function ClientForm({ open, client, plans, profiles, onClose, onSaved, onDelete 
           </div>
         )}
         <div className="flex items-end pb-2"><Switch checked={f.active} onChange={(v) => setF((s) => ({ ...s, active: v }))} label="Conta ativa" description="Desativada, não consegue entrar." /></div>
+        {client?.legacy_code && <p className="text-[12.5px] text-stone-light sm:col-span-2">Cliente nº {client.legacy_code} no sistema anterior.</p>}
         <Textarea containerClassName="sm:col-span-2" label="Observações internas" value={f.notes} onChange={set('notes')} />
       </form>
     </Modal>
@@ -248,17 +255,26 @@ function ClientDetail({ id, onClose, onEdit, onChanged }: { id: number | null; o
         onClose={onClose}
         size="lg"
         title={d?.user.name ?? 'Cliente'}
-        subtitle={d?.user.company || d?.user.email}
+        subtitle={d?.user.company || d?.user.email || undefined}
         footer={<>{d && canEdit && <Button variant="secondary" icon={<Pencil size={15} />} onClick={() => onEdit(d.user)}>Editar</Button>}<Button variant="ghost" onClick={onClose}>Fechar</Button></>}
       >
         {!d ? <Skeleton className="h-[260px]" /> : (
           <div className="flex flex-col gap-7">
             <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-[13.5px] text-stone">
-              <a className="inline-flex items-center gap-2 no-underline hover:text-sage-700" href={`mailto:${d.user.email}`}><Mail size={15} />{d.user.email}</a>
+              {d.user.has_email
+                ? <a className="inline-flex items-center gap-2 no-underline hover:text-sage-700" href={`mailto:${d.user.email}`}><Mail size={15} />{d.user.email}</a>
+                : <span className="inline-flex items-center gap-2 text-stone-light"><Mail size={15} />Sem e-mail</span>}
               {d.user.phone && <a className="inline-flex items-center gap-2 no-underline hover:text-sage-700" href={`tel:${d.user.phone}`}><Phone size={15} />{d.user.phone}</a>}
+              {d.user.city && <span className="inline-flex items-center gap-2"><MapPin size={15} />{d.user.city}{d.user.state ? `/${d.user.state}` : ''}</span>}
               {d.user.plan_name ? <Badge tone="sage">{d.user.plan_name}</Badge> : <Badge tone="mist">Sem plano</Badge>}
+              {d.user.tags && d.user.tags.split(',').map((t) => t.trim()).filter(Boolean).map((t) => <Badge key={t} tone="clay">{t}</Badge>)}
               {!d.user.active && <Badge tone="rose">Inativo</Badge>}
             </div>
+            {(d.user.legacy_code || d.user.notes) && (
+              <p className="-mt-3 text-[12.5px] leading-relaxed text-stone-light">
+                {d.user.legacy_code && <>Cliente nº {d.user.legacy_code} no sistema anterior. </>}{d.user.notes}
+              </p>
+            )}
 
             <div className="grid gap-3 sm:grid-cols-3">
               {[

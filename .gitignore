@@ -41,3 +41,6 @@ server/data/
 .agents
 .claude
 skills-lock.json
+
+# dados de clientes importados de outros sistemas (dados pessoais: nunca versionar)
+/importacao/

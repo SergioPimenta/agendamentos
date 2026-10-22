@@ -1,6 +1,7 @@
 import { config } from '../config.js';
 import { db } from '../db/index.js';
 import { digits, isValidCnpj, isValidCpf, parsePhone } from '../utils/documents.js';
+import { isPlaceholderEmail, shownEmail } from '../utils/email.js';
 import { HttpError } from '../utils/http.js';
 import { addMinutesAt, localStampFromIso, nowLocal, nowStamp } from '../utils/time.js';
 import { CONSUMING, inList } from './availability.js';
@@ -34,7 +35,7 @@ export function presentPayment(row) {
     id: Number(row.id),
     user_id: Number(row.user_id),
     user_name: row.user_name ?? undefined,
-    user_email: row.user_email ?? undefined,
+    user_email: row.user_email == null ? undefined : shownEmail(row.user_email),
     kind: row.kind,
     description: row.description,
     amount_cents: Number(row.amount_cents),
@@ -128,7 +129,8 @@ export async function createCharge({ actor, userId, scope, month, bookingId, rec
   const id = created.insertId;
 
   const doc = String(user.document || '').replace(/\D/g, '');
-  const customer = { name: user.name.slice(0, 64), email: user.email.slice(0, 64) };
+  // Cliente sem e-mail: o Pagar.me exige um endereço, então vai o e-mail do próprio espaço.
+  const customer = { name: user.name.slice(0, 64), email: (isPlaceholderEmail(user.email) ? (rules.business_email || 'contato@harmonizeoser.com.br') : user.email).slice(0, 64) };
   if (doc.length === 11) Object.assign(customer, { type: 'individual', document: doc, document_type: 'CPF' });
   else if (doc.length === 14) Object.assign(customer, { type: 'company', document: doc, document_type: 'CNPJ' });
 
@@ -346,7 +348,7 @@ export async function payBookingDirect({ actor, bookingId, method, cardToken, in
       amount_cents: price,
       customer: {
         name: String(row.user_name).slice(0, 64),
-        email: String(row.user_email).slice(0, 64),
+        email: (isPlaceholderEmail(row.user_email) ? (rules.business_email || 'contato@harmonizeoser.com.br') : String(row.user_email)).slice(0, 64),
         type: doc.length === 14 ? 'company' : 'individual',
         document: doc,
         document_type: doc.length === 14 ? 'CNPJ' : 'CPF',

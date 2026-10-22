@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import { config } from '../config.js';
+import { isPlaceholderEmail } from './email.js';
 
 const enabled = Boolean(config.mail.host && config.mail.user);
 
@@ -40,6 +41,7 @@ export function emailTemplate({ title, intro, rows = [], cta, footer = '' }) {
 
 /** Envio "melhor esforço": nunca derruba a requisição. Sem SMTP configurado, apenas registra no log. */
 export async function sendMail({ to, subject, html, text = '', attachments }) {
+  if (!to || isPlaceholderEmail(to)) return { success: false, skipped: true, noEmail: true }; // cliente sem e-mail: nada a enviar
   // Nos testes, tudo o que seria enviado fica numa caixa de saída em memória para conferir.
   if (process.env.NODE_ENV === 'test') (globalThis.__mailOutbox ??= []).push({ to, subject, html, text, attachments });
   if (!transporter) {

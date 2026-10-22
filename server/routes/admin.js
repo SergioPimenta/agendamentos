@@ -36,6 +36,8 @@ import { HttpError, asyncHandler, parse } from '../utils/http.js';
 import { sendMail } from '../utils/mailer.js';
 import { DATE_RE, TIME_RE, addDays, daysBetween, isValidDate, nowLocal, nowStamp, toMin, weekdayOf } from '../utils/time.js';
 import { birthDateField } from '../utils/birthDate.js';
+import { isPlaceholderEmail, placeholderEmail, shownEmail } from '../utils/email.js';
+import { MAX_ROWS_PER_REQUEST, importClients } from '../services/clientImport.js';
 import { monthStatement, presentRoom } from './app.js';
 
 const router = express.Router();
@@ -371,7 +373,8 @@ router.post('/upload', upload.single('file'), (req, res) => {
 
 const userInput = z.object({
   name: z.string().trim().min(2, 'Informe o nome').max(120),
-  email: z.string().trim().toLowerCase().email('E-mail inválido').max(160),
+  // Vazio = cliente sem e-mail (fica com um endereço reservado, que nunca recebe mensagem).
+  email: z.union([z.literal(''), z.string().trim().toLowerCase().email('E-mail inválido').max(160)]).optional().default(''),
   password: z.string().min(8, 'A senha precisa ter ao menos 8 caracteres').max(100).optional().or(z.literal('')),
   // Acesso ao painel: `profile_id` escolhe o perfil (null = cliente, sem painel). `role: 'admin'` sem perfil = Administrador.
   role: z.enum(['client', 'admin']).optional(),
@@ -379,6 +382,9 @@ const userInput = z.object({
   phone: z.string().trim().max(30).optional().default(''),
   document: z.string().trim().max(20).optional().default(''),
   company: z.string().trim().max(120).optional().default(''),
+  city: z.string().trim().max(80).optional().default(''),
+  state: z.string().trim().toUpperCase().max(2).optional().default(''),
+  tags: z.string().trim().max(255).optional().default(''),
   birth_date: birthDateField,
   plan_id: z.coerce.number().int().positive().nullable().optional(),
   notes: z.string().trim().max(1000).optional().default(''),
@@ -388,7 +394,13 @@ const userInput = z.object({
 const presentUser = (u) => ({
   id: Number(u.id),
   name: u.name,
-  email: u.email,
+  email: shownEmail(u.email),
+  has_email: !isPlaceholderEmail(u.email),
+  legacy_code: u.legacy_code ?? '',
+  city: u.city ?? '',
+  state: u.state ?? '',
+  tags: u.tags ?? '',
+  plan_since: u.plan_since ?? '',
   role: u.role,
   profile_id: u.profile_id == null ? null : Number(u.profile_id),
   profile_name: u.profile_name ?? null,
@@ -451,9 +463,9 @@ router.get(
     const where = ['1=1'];
     const params = [nowLocal().at];
     if (q.q) {
-      where.push('(u.name LIKE ? OR u.email LIKE ? OR u.company LIKE ? OR u.phone LIKE ?)');
+      where.push('(u.name LIKE ? OR u.email LIKE ? OR u.company LIKE ? OR u.phone LIKE ? OR u.city LIKE ? OR u.tags LIKE ? OR u.legacy_code = ?)');
       const like = `%${q.q}%`;
-      params.push(like, like, like, like);
+      params.push(like, like, like, like, like, like, q.q);
     }
     if (q.role) { where.push('u.role = ?'); params.push(q.role); }
     if (q.plan_id) { where.push('u.plan_id = ?'); params.push(q.plan_id); }
@@ -468,6 +480,24 @@ router.get(
       params,
     );
     res.json({ users: rows.map(presentUser) });
+  }),
+);
+
+/**
+ * Importa clientes de outro sistema (linhas já lidas da planilha). `dry_run` só confere e devolve o resumo.
+ * O arquivo é enviado em lotes pequenos pela tela; cada lote é conferido e gravado separadamente.
+ */
+router.post(
+  '/users/import',
+  asyncHandler(async (req, res) => {
+    const { rows, dry_run } = parse(
+      z.object({
+        rows: z.array(z.record(z.string(), z.any())).min(1, 'Nenhum cliente para importar').max(MAX_ROWS_PER_REQUEST, `Envie até ${MAX_ROWS_PER_REQUEST} clientes por vez`),
+        dry_run: z.boolean().optional().default(false),
+      }),
+      req.body,
+    );
+    res.json(await importClients({ rows, dryRun: dry_run }));
   }),
 );
 
@@ -504,14 +534,18 @@ router.post(
   '/users',
   asyncHandler(async (req, res) => {
     const d = parse(userInput, req.body);
-    if (!d.password) throw new HttpError(400, 'Defina uma senha inicial (mín. 8 caracteres).');
-    if (await db.get('SELECT id FROM users WHERE email = ?', [d.email])) throw new HttpError(409, 'Já existe um usuário com esse e-mail.');
+    // Sem e-mail o cliente não entra sozinho no sistema: dispensa a senha inicial (a recepção reserva por ele).
+    const semEmail = !d.email;
+    if (!semEmail && !d.password) throw new HttpError(400, 'Defina uma senha inicial (mín. 8 caracteres).');
+    if (!semEmail && (await db.get('SELECT id FROM users WHERE email = ?', [d.email]))) throw new HttpError(409, 'Já existe um usuário com esse e-mail.');
     await assertPlanExists(d.plan_id);
     const access = await resolveAccess(d, null, req.user);
+    const email = semEmail ? placeholderEmail(d.name) : d.email;
+    const password = d.password || crypto.randomBytes(18).toString('base64url');
     const r = await db.run(
-      `INSERT INTO users (name, email, password, role, profile_id, phone, document, company, birth_date, plan_id, notes, active, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [d.name, d.email, await bcrypt.hash(d.password, 10), access.role, access.profile_id, d.phone, d.document, d.company, d.birth_date ?? null, d.plan_id ?? null, d.notes, d.active ? 1 : 0, nowStamp(), nowStamp()],
+      `INSERT INTO users (name, email, password, role, profile_id, phone, document, company, city, state, tags, birth_date, plan_id, notes, active, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [d.name, email, await bcrypt.hash(password, 10), access.role, access.profile_id, d.phone, d.document, d.company, d.city, d.state, d.tags, d.birth_date ?? null, d.plan_id ?? null, d.notes, d.active ? 1 : 0, nowStamp(), nowStamp()],
     );
     res.status(201).json({ user: presentUser(await getUserRow(r.insertId)) });
   }),
@@ -524,7 +558,9 @@ router.put(
     const current = await db.get('SELECT * FROM users WHERE id = ?', [uid]);
     if (!current) throw new HttpError(404, 'Cliente não encontrado.');
     const d = parse(userInput, req.body);
-    const clash = await db.get('SELECT id FROM users WHERE email = ? AND id <> ?', [d.email, uid]);
+    // E-mail vazio não apaga o que existe: mantém o atual (ou o endereço reservado de quem ainda não tem e-mail).
+    const email = d.email || current.email;
+    const clash = await db.get('SELECT id FROM users WHERE email = ? AND id <> ?', [email, uid]);
     if (clash) throw new HttpError(409, 'Já existe um usuário com esse e-mail.');
     await assertPlanExists(d.plan_id);
 
@@ -533,13 +569,13 @@ router.put(
     }
     const access = await resolveAccess(d, current, req.user);
     // Quem só edita Clientes não pode tomar a conta de alguém com acesso ao painel (trocar senha ou e-mail).
-    if (current.role === 'admin' && uid !== req.user.id && !hasAccess(req.user.permissions, 'profiles', 'edit') && (d.password || d.email !== current.email)) {
+    if (current.role === 'admin' && uid !== req.user.id && !hasAccess(req.user.permissions, 'profiles', 'edit') && (d.password || email !== current.email)) {
       throw new HttpError(403, 'Só quem gerencia perfis de usuário pode alterar o e-mail ou a senha de um usuário do painel.');
     }
 
     await db.run(
-      `UPDATE users SET name = ?, email = ?, role = ?, profile_id = ?, phone = ?, document = ?, company = ?, birth_date = ?, plan_id = ?, notes = ?, active = ?, updated_at = ? WHERE id = ?`,
-      [d.name, d.email, access.role, access.profile_id, d.phone, d.document, d.company, d.birth_date === undefined ? (current.birth_date ?? null) : d.birth_date, d.plan_id ?? null, d.notes, d.active ? 1 : 0, nowStamp(), uid],
+      `UPDATE users SET name = ?, email = ?, role = ?, profile_id = ?, phone = ?, document = ?, company = ?, city = ?, state = ?, tags = ?, birth_date = ?, plan_id = ?, notes = ?, active = ?, updated_at = ? WHERE id = ?`,
+      [d.name, email, access.role, access.profile_id, d.phone, d.document, d.company, d.city, d.state, d.tags, d.birth_date === undefined ? (current.birth_date ?? null) : d.birth_date, d.plan_id ?? null, d.notes, d.active ? 1 : 0, nowStamp(), uid],
     );
     if (d.password) await db.run('UPDATE users SET password = ? WHERE id = ?', [await bcrypt.hash(d.password, 10), uid]);
 
@@ -692,7 +728,7 @@ router.get(
     );
     res.json({
       users: rows.map((u) => ({
-        id: Number(u.id), name: u.name, email: u.email, role: u.role, last_login_at: u.last_login_at,
+        id: Number(u.id), name: u.name, email: shownEmail(u.email), role: u.role, last_login_at: u.last_login_at,
         profile_id: u.profile_id == null ? null : Number(u.profile_id), profile_name: u.profile_name ?? null,
       })),
     });
@@ -714,7 +750,7 @@ router.put(
     );
     res.json({
       user: {
-        id: Number(u.id), name: u.name, email: u.email, role: u.role, last_login_at: u.last_login_at,
+        id: Number(u.id), name: u.name, email: shownEmail(u.email), role: u.role, last_login_at: u.last_login_at,
         profile_id: u.profile_id == null ? null : Number(u.profile_id), profile_name: u.profile_name ?? null,
       },
     });
@@ -1289,7 +1325,7 @@ router.get(
     const payLabel = { none: 'Sem cobrança', pending: 'A pagar', paid: 'Pago' };
     const header = ['Código', 'Data', 'Início', 'Fim', 'Sala', 'Cliente', 'E-mail', 'Status', 'Horas', 'Horas incluídas', 'Valor', 'Pagamento'];
     const lines = [header, ...rows.map((r) => [
-      r.code, r.date.split('-').reverse().join('/'), r.start_time, r.end_time, r.room_name, r.user_name, r.user_email,
+      r.code, r.date.split('-').reverse().join('/'), r.start_time, r.end_time, r.room_name, r.user_name, shownEmail(r.user_email),
       statusLabel[r.status] ?? r.status, (Number(r.total_minutes) / 60).toFixed(2).replace('.', ','),
       (Number(r.included_minutes) / 60).toFixed(2).replace('.', ','), formatBRL(Number(r.price_cents)).replace(/ /g, ' '), payLabel[r.payment_status] ?? r.payment_status,
     ])];
