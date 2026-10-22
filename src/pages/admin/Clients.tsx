@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Mail, MapPin, Pencil, Phone, Plus, Trash2, Upload, Users } from 'lucide-react';
+import { CalendarPlus, Mail, MapPin, Pencil, Phone, Plus, Trash2, Upload, Users } from 'lucide-react';
 import { BookingDetail } from '../../components/booking/BookingDetail';
 import { BookingRow } from '../../components/booking/BookingRow';
 import { Button } from '../../components/ui/Button';
@@ -320,6 +320,7 @@ function ClientDetail({ id, onClose, onEdit, onChanged }: { id: number | null; o
                 : <span className="inline-flex items-center gap-2 text-stone-light"><Mail size={15} />Sem e-mail</span>}
               {d.user.phone && <a className="inline-flex items-center gap-2 no-underline hover:text-sage-700" href={`tel:${d.user.phone}`}><Phone size={15} />{d.user.phone}</a>}
               {d.user.city && <span className="inline-flex items-center gap-2"><MapPin size={15} />{d.user.city}{d.user.state ? `/${d.user.state}` : ''}</span>}
+              {d.user.created_at && <span className="inline-flex items-center gap-2"><CalendarPlus size={15} />Cadastro em {fmtDateFull(d.user.created_at.slice(0, 10))}</span>}
               {d.user.plan_name ? <Badge tone="sage">{d.user.plan_name}</Badge> : <Badge tone="mist">Sem plano</Badge>}
               {d.user.tags && d.user.tags.split(',').map((t) => t.trim()).filter(Boolean).map((t) => <Badge key={t} tone="clay">{t}</Badge>)}
               {!d.user.active && <Badge tone="rose">Inativo</Badge>}
