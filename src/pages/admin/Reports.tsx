@@ -6,7 +6,7 @@ import { Input } from '../../components/ui/Form';
 import { Card, CardHeader, DataTable, PageHeader, Segmented, Stat, Td, Th } from '../../components/ui/Misc';
 import { useApi } from '../../hooks/useApi';
 import { cn } from '../../lib/cn';
-import { WEEKDAYS, addDays, fmtDuration, fmtHours, fmtMoney, todayStr } from '../../lib/format';
+import { WEEKDAYS, addDays, fmtDuration, fmtHours, fmtMoney, todayStr, weekdayOf } from '../../lib/format';
 import { api } from '../../services/api';
 import { RoomInsights, roomHighlights, type HeatCapacity, type RoomReport } from './RoomInsights';
 
@@ -21,10 +21,14 @@ interface Report {
   by_hour: { hour: number; minutes: number }[];
 }
 
-type Preset = 'month' | 'last' | '30' | 'custom';
+type Preset = 'today' | 'yesterday' | 'week' | 'month' | 'last' | '30' | 'custom';
 
 function range(preset: Preset): { from: string; to: string } {
   const today = todayStr();
+  if (preset === 'today') return { from: today, to: today };
+  if (preset === 'yesterday') return { from: addDays(today, -1), to: addDays(today, -1) };
+  // Semana de segunda-feira até hoje.
+  if (preset === 'week') return { from: addDays(today, -((weekdayOf(today) + 6) % 7)), to: today };
   if (preset === 'month') return { from: `${today.slice(0, 7)}-01`, to: today };
   if (preset === '30') return { from: addDays(today, -29), to: today };
   const d = new Date(`${today.slice(0, 7)}-01T12:00:00Z`);
@@ -57,7 +61,7 @@ export default function AdminReports() {
       />
 
       <div className="mb-6 flex flex-wrap items-end gap-4">
-        <Segmented value={preset} onChange={setPreset} options={[{ value: 'month', label: 'Este mês' }, { value: 'last', label: 'Mês passado' }, { value: '30', label: '30 dias' }, { value: 'custom', label: 'Personalizado' }]} />
+        <Segmented value={preset} onChange={setPreset} options={[{ value: 'today', label: 'Hoje' }, { value: 'yesterday', label: 'Ontem' }, { value: 'week', label: 'Esta semana' }, { value: 'month', label: 'Este mês' }, { value: 'last', label: 'Mês passado' }, { value: '30', label: '30 dias' }, { value: 'custom', label: 'Personalizado' }]} />
         {preset === 'custom' && (
           <div className="flex gap-3">
             <Input aria-label="De" type="date" value={custom.from} onChange={(e) => setCustom({ ...custom, from: e.target.value })} />
