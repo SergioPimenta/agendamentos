@@ -397,6 +397,32 @@ const migrations = [
         WHERE u.role = 'client' AND NOT EXISTS (SELECT 1 FROM client_people p WHERE p.user_id = u.id)`,
     ],
   },
+  {
+    // Convidados de reservas (o relatório do sistema anterior e, daqui em diante, todo convidado de uma reserva nova).
+    id: '019_client_guests',
+    statements: () => [
+      `CREATE TABLE IF NOT EXISTS client_guests (
+        id ${pk()},
+        user_id INT NULL,
+        client_code VARCHAR(20) NULL,
+        client_name VARCHAR(120) NOT NULL DEFAULT '',
+        host_name VARCHAR(120) NOT NULL DEFAULT '',
+        name VARCHAR(120) NOT NULL DEFAULT '',
+        email VARCHAR(160) NOT NULL,
+        unit VARCHAR(80) NOT NULL DEFAULT '',
+        invite_date VARCHAR(10) NULL,
+        invite_start VARCHAR(5) NOT NULL DEFAULT '',
+        invite_end VARCHAR(5) NOT NULL DEFAULT '',
+        linked INT NOT NULL DEFAULT 1,
+        booking_id INT NULL,
+        legacy_id VARCHAR(20) NULL,
+        created_at VARCHAR(19) NOT NULL
+      )${tail()}`,
+      `CREATE INDEX idx_client_guests_user ON client_guests (user_id)`,
+      `CREATE INDEX idx_client_guests_booking ON client_guests (booking_id)`,
+      `CREATE INDEX idx_client_guests_email ON client_guests (email)`,
+    ],
+  },
 ];
 
 export async function migrate() {

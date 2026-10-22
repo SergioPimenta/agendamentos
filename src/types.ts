@@ -263,6 +263,25 @@ export interface Statement {
 
 export interface Guest { name: string; email: string }
 
+/** Convidado na seção Convidados dos clientes (importado do sistema anterior ou gravado a cada reserva). */
+export interface ClientGuest {
+  id: number;
+  user_id: number | null;
+  client_code: string;
+  client_name: string;
+  host_name: string;
+  name: string;
+  email: string;
+  unit: string;
+  invite_date: string;
+  invite_start: string;
+  invite_end: string;
+  linked: boolean;
+  booking_id: number | null;
+  legacy_id: string;
+  created_at: string;
+}
+
 export interface Client {
   id: number;
   name: string;

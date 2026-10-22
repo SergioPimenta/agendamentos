@@ -3,6 +3,7 @@ import { db } from '../db/index.js';
 import { config } from '../config.js';
 import { shownEmail } from '../utils/email.js';
 import { HttpError } from '../utils/http.js';
+import { recordBookingGuests } from './clientGuests.js';
 import { MAX_GUESTS, guestsToDb, normalizeGuestList, parseGuestList, parseGuests } from '../utils/guests.js';
 import { bookingToIcs } from '../utils/ics.js';
 import { sendTemplated } from './emailTemplates.js';
@@ -228,6 +229,8 @@ export async function createBookings({ actor, input }) {
   });
 
   const created = await fetchByIds(createdIds, { rules, now, isAdmin, viewerId: actor.id });
+  // Convidados novos entram na seção Convidados dos clientes (uma linha por reserva).
+  if (guestsJson) for (const bid of createdIds) await recordBookingGuests(bid).catch(() => {});
   // Reserva aguardando pagamento só vira e-mail de confirmação depois de paga.
   if (!held) {
     notifyCreated(created, user).catch(() => {});
@@ -311,6 +314,7 @@ export async function updateBooking({ actor, id, input }) {
   });
 
   const row = serializeBooking(await getBookingRow(id), { rules, now, isAdmin, viewerId: actor.id });
+  await recordBookingGuests(id).catch(() => {});
   notifyChanged(row, user).catch(() => {});
 
   // Convidados: quem acabou de ser adicionado recebe o convite; quem já estava recebe o aviso se o encontro mudou.
@@ -351,6 +355,7 @@ export async function cancelBooking({ actor, id, reason = '', scope = 'one' }) {
       [stamp, actor.id, reason.slice(0, 250), stamp, bid],
     );
     credited += await creditCancelledBooking(before, actor.id);
+    await db.run('UPDATE client_guests SET linked = 0 WHERE booking_id = ?', [bid]);
   }
 
   const fresh = await getBookingRow(id);

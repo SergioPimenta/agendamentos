@@ -7,6 +7,7 @@ export default function ClientsLayout() {
   const { can } = useAuth();
   const tabs = [
     { to: '/admin/clientes', label: 'Clientes', end: true, show: can('clients') },
+    { to: '/admin/clientes/convidados', label: 'Convidados', end: false, show: can('clients') },
     { to: '/admin/clientes/perfis', label: 'Perfis de usuário', end: false, show: can('profiles') },
   ].filter((t) => t.show);
 

@@ -39,6 +39,7 @@ import { birthDateField } from '../utils/birthDate.js';
 import { isPlaceholderEmail, placeholderEmail, shownEmail } from '../utils/email.js';
 import { MAX_ROWS_PER_REQUEST, importClients } from '../services/clientImport.js';
 import { createPerson, createPrimaryPerson, listPeople, registrationPerson, personSchema, presentPerson, updatePerson } from '../services/clientPeople.js';
+import { MAX_GUEST_ROWS, importGuests, listGuests } from '../services/clientGuests.js';
 import { monthStatement, presentRoom } from './app.js';
 
 const router = express.Router();
@@ -52,6 +53,7 @@ router.use('/birthdays', requireModule(['birthdays']));
 router.use('/packages', requireModule(['packages']));
 router.use('/hour-bank', requireModule(['hour_bank']));
 router.use('/people', requireModule(['clients']));
+router.use('/guests', requireModule(['clients']));
 router.use('/rooms', requireModule(['rooms'], ['agenda', 'bookings', 'packages']));
 router.use('/upload', requireModule(['rooms']));
 router.use('/plans', requireModule(['plans'], ['clients', 'finance']));
@@ -507,6 +509,48 @@ router.post(
       req.body,
     );
     res.json(await importClients({ rows, dryRun: dry_run, update }));
+  }),
+);
+
+/* ---------------- convidados dos clientes ---------------- */
+
+router.get(
+  '/guests',
+  asyncHandler(async (req, res) => {
+    const q = parse(
+      z.object({
+        q: z.string().trim().max(80).optional(),
+        user_id: id.optional(),
+        page: z.coerce.number().int().min(1).optional().default(1),
+        per_page: z.coerce.number().int().min(1).max(100).optional().default(25),
+      }),
+      req.query,
+    );
+    const { guests, total } = await listGuests({ q: q.q, userId: q.user_id, page: q.page, perPage: q.per_page });
+    res.json({ guests, total, page: q.page, per_page: q.per_page });
+  }),
+);
+
+router.post(
+  '/guests/import',
+  asyncHandler(async (req, res) => {
+    const { rows, dry_run } = parse(
+      z.object({
+        rows: z.array(z.record(z.string(), z.any())).min(1, 'Nenhum convidado para importar').max(MAX_GUEST_ROWS, `Envie até ${MAX_GUEST_ROWS} convidados por vez`),
+        dry_run: z.boolean().optional().default(false),
+      }),
+      req.body,
+    );
+    res.json(await importGuests({ rows, dryRun: dry_run }));
+  }),
+);
+
+router.delete(
+  '/guests/:id',
+  asyncHandler(async (req, res) => {
+    const r = await db.run('DELETE FROM client_guests WHERE id = ?', [Number(req.params.id)]);
+    if (!r.changes) throw new HttpError(404, 'Convidado não encontrado.');
+    res.json({ ok: true });
   }),
 );
 
