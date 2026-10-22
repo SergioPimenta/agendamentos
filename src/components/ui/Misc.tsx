@@ -98,10 +98,11 @@ export function ProgressBar({ value, max, tone = 'sage', className }: { value: n
   );
 }
 
-export function DataTable({ children, className }: { children: ReactNode; className?: string }) {
+/** `fit`: a tabela se ajusta à largura da tela (colunas quebram linha) em vez de criar rolagem lateral. */
+export function DataTable({ children, className, fit }: { children: ReactNode; className?: string; fit?: boolean }) {
   return (
-    <div className={cn('overflow-x-auto rounded-[22px] border border-ink/8 bg-cream', className)}>
-      <table className="w-full min-w-[640px] border-collapse text-left text-[13.5px]">{children}</table>
+    <div className={cn('rounded-[22px] border border-ink/8 bg-cream', fit ? 'overflow-hidden' : 'overflow-x-auto', className)}>
+      <table className={cn('w-full border-collapse text-left text-[13.5px]', fit ? 'table-fixed' : 'min-w-[640px]')}>{children}</table>
     </div>
   );
 }

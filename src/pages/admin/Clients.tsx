@@ -15,6 +15,7 @@ import { PeopleSection } from './ClientPeople';
 import { ImportClientsModal } from './ImportClients';
 import type { AccessProfile, Booking, Client, ClientPerson, Plan, Statement } from '../../types';
 
+const PER_PAGE = 25;
 const emptyForm = { name: '', email: '', password: '', profile_id: '', phone: '', document: '', company: '', city: '', state: '', tags: '', birth_date: '', plan_id: '', notes: '', active: true };
 
 export default function AdminClients() {
@@ -30,7 +31,14 @@ export default function AdminClients() {
   const [form, setForm] = useState<{ client?: Client } | null>(null);
   const [importing, setImporting] = useState(false);
 
-  const list = useApi(() => api.get<{ users: Client[] }>('/admin/users', { q, plan_id: plan, active }), [q, plan, active]);
+  const [page, setPage] = useState(1);
+  const list = useApi(() => api.get<{ users: Client[]; total: number }>('/admin/users', { q, plan_id: plan, active, page: String(page), per_page: String(PER_PAGE) }), [q, plan, active, page]);
+  const total = list.data?.total ?? 0;
+  const pages = Math.max(1, Math.ceil(total / PER_PAGE));
+  const from = total ? (page - 1) * PER_PAGE + 1 : 0;
+  const to = Math.min(page * PER_PAGE, total);
+  // Mudou o filtro: volta para a primeira página.
+  const filter = (set: (v: string) => void) => (v: string) => { set(v); setPage(1); };
   const plans = useApi(() => api.get<{ plans: Plan[] }>('/admin/plans'), []);
   // O perfil de acesso só é escolhido aqui por quem gerencia Perfis de usuário.
   const canPickProfile = can('profiles', 'edit');
@@ -46,12 +54,12 @@ export default function AdminClients() {
       />
 
       <div className="mb-5 grid gap-3 sm:grid-cols-[1.6fr_1fr_1fr]">
-        <SearchInput placeholder="Buscar por nome, e-mail, empresa, cidade, etiqueta…" value={text} onChange={(e) => setText(e.target.value)} aria-label="Buscar" />
-        <Select aria-label="Plano" value={plan} onChange={(e) => setPlan(e.target.value)}>
+        <SearchInput placeholder="Buscar por nome, e-mail, empresa, cidade, etiqueta…" value={text} onChange={(e) => filter(setText)(e.target.value)} aria-label="Buscar" />
+        <Select aria-label="Plano" value={plan} onChange={(e) => filter(setPlan)(e.target.value)}>
           <option value="">Todos os planos</option>
           {plans.data?.plans.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </Select>
-        <Select aria-label="Situação" value={active} onChange={(e) => setActive(e.target.value)}>
+        <Select aria-label="Situação" value={active} onChange={(e) => filter(setActive)(e.target.value)}>
           <option value="">Ativos e inativos</option>
           <option value="true">Somente ativos</option>
           <option value="false">Somente inativos</option>
@@ -62,29 +70,46 @@ export default function AdminClients() {
       {!list.data ? <Skeleton className="h-[320px] rounded-[22px]" /> : list.data.users.length === 0 ? (
         <div className="rounded-[22px] border border-ink/8 bg-cream"><EmptyState icon={<Users />} title="Nenhum cliente encontrado" /></div>
       ) : (
-        <DataTable className={list.loading ? 'opacity-60' : ''}>
-          <thead><tr><Th>Cliente</Th><Th>Contato</Th><Th>Plano</Th><Th>Reservas</Th><Th>Próxima reserva</Th><Th>Situação</Th></tr></thead>
-          <tbody>
-            {list.data.users.map((c) => (
-              <tr key={c.id} onClick={() => setDetailId(c.id)} className="cursor-pointer transition-colors hover:bg-sage-dim/50">
-                <Td>
-                  <div className="flex items-center gap-3">
-                    <Avatar name={c.name} size={36} />
-                    <div className="min-w-0">
-                      <p className="truncate font-medium">{c.name} {c.role === 'admin' && <Badge tone="ink" className="ml-1">{c.profile_name ?? 'admin'}</Badge>}</p>
-                      <p className="truncate text-[12px] text-stone">{c.company || c.email || c.city}</p>
+        <>
+          <DataTable fit className={list.loading ? 'opacity-60' : ''}>
+            <colgroup><col className="w-[29%]" /><col className="w-[29%]" /><col className="w-[17%]" /><col className="w-[25%]" /></colgroup>
+            <thead><tr>{['Cliente', 'Contato', 'Plano', 'Situação'].map((h) => <Th key={h} className="px-3 whitespace-normal">{h}</Th>)}</tr></thead>
+            <tbody>
+              {list.data.users.map((c) => (
+                <tr key={c.id} onClick={() => setDetailId(c.id)} className="cursor-pointer transition-colors hover:bg-sage-dim/50">
+                  <Td className="px-3">
+                    <div className="flex items-center gap-2.5">
+                      <Avatar name={c.name} size={34} />
+                      <div className="min-w-0">
+                        <p className="font-medium break-words">{c.name} {c.role === 'admin' && <Badge tone="ink" className="ml-1">{c.profile_name ?? 'admin'}</Badge>}</p>
+                        <p className="text-[12px] break-words text-stone">{c.company || (c.has_email ? c.email : c.city)}</p>
+                      </div>
                     </div>
-                  </div>
-                </Td>
-                <Td><span className={`block text-[13px] ${c.has_email ? '' : 'text-stone-light'}`}>{c.has_email ? c.email : 'Sem e-mail'}</span><span className="text-[12px] text-stone">{c.phone || '—'}{c.city ? ` · ${c.city}${c.state ? `/${c.state}` : ''}` : ''}</span></Td>
-                <Td>{c.plan_name ? <Badge tone="sage">{c.plan_name}</Badge> : <span className="text-stone-light">—</span>}{c.tags && <span className="mt-1 block text-[11.5px] text-stone">{c.tags}</span>}</Td>
-                <Td>{c.bookings_count}</Td>
-                <Td>{c.next_booking ? `${fmtDateFull(c.next_booking.slice(0, 10))} ${c.next_booking.slice(11)}` : '—'}</Td>
-                <Td>{c.active ? <Badge tone="sage">Ativo</Badge> : <Badge tone="rose">Inativo</Badge>}</Td>
-              </tr>
-            ))}
-          </tbody>
-        </DataTable>
+                  </Td>
+                  <Td className="px-3"><span className={`block text-[13px] break-all ${c.has_email ? '' : 'text-stone-light'}`}>{c.has_email ? c.email : 'Sem e-mail'}</span><span className="text-[12px] break-words text-stone">{c.phone || '—'}{c.city ? ` · ${c.city}${c.state ? `/${c.state}` : ''}` : ''}</span></Td>
+                  <Td className="px-3">{c.plan_name ? <Badge tone="sage">{c.plan_name}</Badge> : <span className="text-stone-light">—</span>}{c.tags && <span className="mt-1 block text-[11.5px] break-words text-stone">{c.tags}</span>}</Td>
+                  <Td className="px-3">
+                    <div className="flex flex-col items-start gap-1">
+                      {c.active ? <Badge tone="sage">Ativo</Badge> : <Badge tone="rose">Inativo</Badge>}
+                      <span className="text-[12px] text-stone">{c.bookings_count} reserva{c.bookings_count === 1 ? '' : 's'}</span>
+                      <span className="text-[12px] text-stone">Próxima: {c.next_booking ? `${fmtDateFull(c.next_booking.slice(0, 10))} ${c.next_booking.slice(11)}` : '—'}</span>
+                    </div>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </DataTable>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-[13px] text-stone">
+            <span>{from}–{to} de {total} cliente{total === 1 ? '' : 's'}</span>
+            {pages > 1 && (
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="secondary" disabled={page <= 1 || list.loading} onClick={() => setPage(page - 1)}>Anterior</Button>
+                <span>Página {page} de {pages}</span>
+                <Button size="sm" variant="secondary" disabled={page >= pages || list.loading} onClick={() => setPage(page + 1)}>Próxima</Button>
+              </div>
+            )}
+          </div>
+        </>
       )}
 
       <ImportClientsModal open={importing} onClose={() => setImporting(false)} onDone={list.reload} />

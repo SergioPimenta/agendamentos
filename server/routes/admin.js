@@ -459,6 +459,8 @@ router.get(
         role: z.enum(['client', 'admin']).optional(),
         plan_id: id.optional(),
         active: z.enum(['true', 'false']).optional(),
+        page: z.coerce.number().int().min(1).optional(),
+        per_page: z.coerce.number().int().min(1).max(100).optional(),
       }),
       req.query,
     );
@@ -473,15 +475,19 @@ router.get(
     if (q.plan_id) { where.push('u.plan_id = ?'); params.push(q.plan_id); }
     if (q.active) { where.push('u.active = ?'); params.push(q.active === 'true' ? 1 : 0); }
 
+    // Sem `page` a lista vem inteira (até 500), como as demais telas esperam; com `page` vem paginada.
+    const paged = q.page != null;
+    const perPage = q.per_page ?? 25;
+    const total = paged ? (await db.get(`SELECT COUNT(*) AS n FROM users u WHERE ${where.join(' AND ')}`, params.slice(1))).n : null;
     const rows = await db.query(
       `SELECT u.*, p.name AS plan_name, ap.name AS profile_name,
               (SELECT COUNT(*) FROM bookings b WHERE b.user_id = u.id AND b.status <> 'cancelled') AS bookings_count,
               (SELECT MIN(b.start_at) FROM bookings b WHERE b.user_id = u.id AND b.status IN ('pending','confirmed') AND b.start_at >= ?) AS next_booking
          FROM users u LEFT JOIN plans p ON p.id = u.plan_id LEFT JOIN access_profiles ap ON ap.id = u.profile_id
-        WHERE ${where.join(' AND ')} ORDER BY u.name LIMIT 500`,
+        WHERE ${where.join(' AND ')} ORDER BY u.name ${paged ? `LIMIT ${perPage} OFFSET ${(q.page - 1) * perPage}` : 'LIMIT 500'}`,
       params,
     );
-    res.json({ users: rows.map(presentUser) });
+    res.json(paged ? { users: rows.map(presentUser), total: Number(total), page: q.page, per_page: perPage } : { users: rows.map(presentUser) });
   }),
 );
 
