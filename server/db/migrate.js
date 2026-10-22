@@ -423,6 +423,14 @@ const migrations = [
       `CREATE INDEX idx_client_guests_email ON client_guests (email)`,
     ],
   },
+  {
+    // Reservas trazidas do sistema anterior guardam o número de lá (evita importar duas vezes).
+    id: '020_booking_legacy_id',
+    statements: () => [
+      `ALTER TABLE bookings ADD COLUMN legacy_id VARCHAR(20) NULL`,
+      `CREATE INDEX idx_bookings_legacy ON bookings (legacy_id)`,
+    ],
+  },
 ];
 
 export async function migrate() {

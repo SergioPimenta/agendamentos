@@ -1,21 +1,25 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Download, Plus, Search } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Plus, Search, Upload } from 'lucide-react';
 import { BookingDetail } from '../../components/booking/BookingDetail';
 import { BookingFormModal } from '../../components/booking/BookingFormModal';
 import { Button } from '../../components/ui/Button';
 import { EmptyState, ErrorState, PaymentBadge, Skeleton, StatusBadge, useToast } from '../../components/ui/Feedback';
 import { Input, Select, SearchInput } from '../../components/ui/Form';
 import { DataTable, PageHeader, Td, Th } from '../../components/ui/Misc';
+import { useAuth } from '../../contexts/AuthContext';
 import { useApi, useDebounced } from '../../hooks/useApi';
 import { fmtDateFull, fmtDuration, fmtMoney } from '../../lib/format';
 import { api } from '../../services/api';
 import type { Booking, BusinessHours, PublicSettings, Room } from '../../types';
+import { ImportBookingsModal } from './ImportBookings';
 
 interface List { total: number; page: number; limit: number; bookings: Booking[] }
 
 export default function AdminBookings() {
   const toast = useToast();
+  const { can } = useAuth();
+  const [importing, setImporting] = useState(false);
   const [params, setParams] = useSearchParams();
   const [text, setText] = useState('');
   const q = useDebounced(text, 350);
@@ -57,6 +61,7 @@ export default function AdminBookings() {
         title="Reservas"
         description="Busque, filtre e gerencie todas as reservas."
         actions={<>
+          {can('bookings', 'edit') && <Button variant="secondary" icon={<Upload size={16} />} onClick={() => setImporting(true)}>Importar reservas</Button>}
           <Button variant="secondary" icon={<Download size={16} />} onClick={exportCsv}>Exportar CSV</Button>
           <Button icon={<Plus size={16} />} onClick={() => setForm({})}>Nova reserva</Button>
         </>}
@@ -120,6 +125,7 @@ export default function AdminBookings() {
         </>
       )}
 
+      <ImportBookingsModal open={importing} onClose={() => setImporting(false)} onDone={list.reload} />
       <BookingDetail booking={selected} admin onClose={() => setSelected(null)} onEdit={(b) => { setSelected(null); setForm({ booking: b }); }} onChanged={list.reload} />
       {meta.data && <BookingFormModal open={!!form} onClose={() => setForm(null)} admin booking={form?.booking} rooms={meta.data.rooms} hours={meta.data.hours} settings={meta.data.settings} onSaved={list.reload} />}
     </>

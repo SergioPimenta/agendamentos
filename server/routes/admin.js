@@ -40,6 +40,7 @@ import { isPlaceholderEmail, placeholderEmail, shownEmail } from '../utils/email
 import { MAX_ROWS_PER_REQUEST, importClients } from '../services/clientImport.js';
 import { createPerson, createPrimaryPerson, listPeople, registrationPerson, personSchema, presentPerson, updatePerson } from '../services/clientPeople.js';
 import { MAX_GUEST_ROWS, importGuests, listGuests } from '../services/clientGuests.js';
+import { MAX_BOOKING_ROWS, importBookings } from '../services/bookingImport.js';
 import { monthStatement, presentRoom } from './app.js';
 
 const router = express.Router();
@@ -241,6 +242,21 @@ router.get(
       limit: q.limit,
       bookings: rows.map((r) => serializeBooking(r, { rules, now, isAdmin: true })),
     });
+  }),
+);
+
+/** Importa reservas do sistema anterior (lotes de até MAX_BOOKING_ROWS). `dry_run` só confere. */
+router.post(
+  '/bookings/import',
+  asyncHandler(async (req, res) => {
+    const { rows, dry_run } = parse(
+      z.object({
+        rows: z.array(z.record(z.string(), z.any())).min(1, 'Nenhuma reserva para importar').max(MAX_BOOKING_ROWS, `Envie até ${MAX_BOOKING_ROWS} reservas por vez`),
+        dry_run: z.boolean().optional().default(false),
+      }),
+      req.body,
+    );
+    res.json(await importBookings({ rows, dryRun: dry_run, actorId: req.user.id }));
   }),
 );
 
