@@ -125,7 +125,8 @@ export function RoomBookingPanel({
   };
 
   const minutes = start && end ? toMin(end) - toMin(start) : 0;
-  const durationChips = DURATIONS.filter(
+  // Salas com limite acima de 8h (ex.: o dia todo) ganham um atalho com o próprio limite.
+  const durationChips = [...DURATIONS, ...(room.max_minutes > DURATIONS[DURATIONS.length - 1] ? [room.max_minutes] : [])].filter(
     (d) => d >= room.min_minutes && d <= room.max_minutes && !!start && !!dayHours?.is_open && toMin(start) + d <= toMin(dayHours.close_time),
   );
 

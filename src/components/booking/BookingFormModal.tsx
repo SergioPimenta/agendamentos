@@ -235,7 +235,7 @@ export function BookingFormModal({ open, onClose, rooms, hours, settings, admin,
     onClose();
   };
 
-  const durationChips = DURATIONS.filter((d) => room && (admin || (d >= room.min_minutes && d <= room.max_minutes)) && dayHours?.is_open && form.start_time && toMin(form.start_time) + d <= toMin(dayHours.close_time));
+  const durationChips = [...DURATIONS, ...(room && room.max_minutes > DURATIONS[DURATIONS.length - 1] ? [room.max_minutes] : [])].filter((d) => room && (admin || (d >= room.min_minutes && d <= room.max_minutes)) && dayHours?.is_open && form.start_time && toMin(form.start_time) + d <= toMin(dayHours.close_time));
 
   return (
     <Modal

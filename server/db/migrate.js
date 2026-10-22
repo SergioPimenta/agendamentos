@@ -463,6 +463,11 @@ const migrations = [
       },
     ],
   },
+  {
+    // A Sala Estrela (sistema modular) é usada o dia todo: aceita reservas de até 15h. Só muda se ainda estiver no padrão de 8h.
+    id: '022_estrela_max_15h',
+    statements: () => [`UPDATE rooms SET max_minutes = 900 WHERE slug = 'estrela' AND max_minutes = 480`],
+  },
 ];
 
 export async function migrate() {
