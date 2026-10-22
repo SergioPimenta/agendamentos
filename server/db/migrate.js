@@ -431,6 +431,38 @@ const migrations = [
       `CREATE INDEX idx_bookings_legacy ON bookings (legacy_id)`,
     ],
   },
+  {
+    // Salas do sistema anterior que ainda não existiam aqui (textos de exemplo para completar no painel).
+    // Só cria a que não existe (pelo apelido ou pelo nome), então é seguro onde a sala já foi cadastrada.
+    id: '021_legacy_rooms',
+    statements: () => [
+      async (tx) => {
+        // Instalação nova (sem salas) segue o catálogo padrão; isto vale só para quem já tem salas cadastradas.
+        if (!Number((await tx.get('SELECT COUNT(*) AS n FROM rooms')).n)) return;
+        const lorem = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.';
+        const rooms = [
+          { name: 'Sala Estrela', slug: 'estrela', names: ['sala estrela', 'estrela'], capacity: 10, price_cents: 3400 },
+          { name: 'Sala Mar', slug: 'mar', names: ['sala mar', 'mar'], capacity: 4, price_cents: 3400 },
+          { name: 'Oceano - Salão de Festas', slug: 'oceano', names: ['oceano', 'sala oceano', 'oceano - salão de festas'], capacity: 40, price_cents: 13500 },
+          { name: 'Lua - Sl. Eventos', slug: 'lua', names: ['lua', 'sala lua', 'lua - sl. eventos', 'lua - sala de eventos'], capacity: 30, price_cents: 10000 },
+        ];
+        let order = Number((await tx.get('SELECT COALESCE(MAX(sort_order), -1) AS n FROM rooms')).n);
+        for (const r of rooms) {
+          const exists = await tx.get(
+            `SELECT id FROM rooms WHERE slug = ? OR LOWER(name) IN (${r.names.map(() => '?').join(', ')})`,
+            [r.slug, ...r.names],
+          );
+          if (exists) continue;
+          order += 1;
+          await tx.run(
+            `INSERT INTO rooms (name, slug, tagline, description, capacity, price_cents, image, amenities, min_minutes, max_minutes, buffer_minutes, active, sort_order, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, '', ?, 60, 480, 0, 1, ?, ?)`,
+            [r.name, r.slug, 'Lorem ipsum dolor sit amet', lorem, r.capacity, r.price_cents, JSON.stringify(['Lorem ipsum', 'Dolor sit amet', 'Consectetur adipiscing']), order, nowStamp()],
+          );
+        }
+      },
+    ],
+  },
 ];
 
 export async function migrate() {
@@ -441,7 +473,7 @@ export async function migrate() {
   for (const m of migrations) {
     if (done.has(m.id)) continue;
     await db.transaction(async (tx) => {
-      for (const stmt of m.statements()) await tx.exec(stmt);
+      for (const stmt of m.statements()) await (typeof stmt === 'function' ? stmt(tx) : tx.exec(stmt));
       await tx.run('INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)', [m.id, nowStamp()]);
     });
     console.log(`[db] migração aplicada: ${m.id}`);
