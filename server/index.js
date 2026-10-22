@@ -1,3 +1,4 @@
+import compression from 'compression';
 import cors from 'cors';
 import express from 'express';
 import fs from 'fs';
@@ -44,7 +45,12 @@ export async function createApp() {
     }),
   );
   app.use(cors({ origin: config.isProd ? false : true }));
+  // Comprime respostas (JSON e arquivos do front-end): o painel carrega bem mais rápido em conexões lentas.
+  app.use(compression());
   app.use(express.json({ limit: '200kb' }));
+
+  // Resposta mínima, sem banco: serve para um monitor externo manter o processo acordado na hospedagem.
+  app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
   // Rotina de limpeza para hospedagem sem processo fixo (Vercel Cron). Local/servidor próprio usa os setInterval abaixo.
   app.get('/api/cron/sweep', asyncHandler(async (req, res) => {
@@ -67,7 +73,16 @@ export async function createApp() {
 
   // Em produção o mesmo processo serve o front-end compilado (SPA).
   if (fs.existsSync(path.join(config.distDir, 'index.html'))) {
-    app.use(express.static(config.distDir, { maxAge: '1h', index: false }));
+    app.use(
+      express.static(config.distDir, {
+        maxAge: '1h',
+        index: false,
+        // Arquivos com hash no nome (js/css do build) nunca mudam: o navegador guarda por um ano.
+        setHeaders: (res, file) => {
+          if (/-[\w-]{8}\.(js|css)$/.test(file)) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        },
+      }),
+    );
     app.get('*', (_req, res) => res.sendFile(path.join(config.distDir, 'index.html')));
   }
 

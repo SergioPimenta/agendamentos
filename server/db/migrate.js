@@ -468,6 +468,16 @@ const migrations = [
     id: '022_estrela_max_15h',
     statements: () => [`UPDATE rooms SET max_minutes = 900 WHERE slug = 'estrela' AND max_minutes = 480`],
   },
+  {
+    // Com milhares de reservas, a lista de clientes (contagem e próxima reserva de cada um) e os relatórios
+    // precisam achar as reservas por cliente/situação/data sem varrer a tabela inteira.
+    id: '023_booking_indexes',
+    statements: () => [
+      `CREATE INDEX idx_bookings_user_status_start ON bookings (user_id, status, start_at)`,
+      `CREATE INDEX idx_bookings_status_start ON bookings (status, start_at)`,
+      `CREATE INDEX idx_bookings_date_status ON bookings (date, status)`,
+    ],
+  },
 ];
 
 export async function migrate() {
