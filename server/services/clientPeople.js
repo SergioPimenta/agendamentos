@@ -26,6 +26,53 @@ export const personSchema = z.object({
   is_primary: z.boolean().optional().default(false),
 });
 
+/** Dados da pessoa enviados junto com o cadastro do cliente (tudo opcional: o que faltar vem do próprio cliente). */
+export const registrationPerson = z
+  .object({
+    name: z.string().trim().max(120).optional().default(''),
+    gender: z.enum(['', 'Masculino', 'Feminino']).optional().default(''),
+    birth_date: birthDateField,
+    email: z.union([z.literal(''), z.string().trim().toLowerCase().email('E-mail da pessoa inválido').max(160)]).optional().default(''),
+    phone: z.string().trim().max(30).optional().default(''),
+    phone2: z.string().trim().max(30).optional().default(''),
+    role: z.string().trim().max(80).optional().default(''),
+    rg: z.string().trim().max(20).optional().default(''),
+    cpf: z.string().trim().max(14).optional().default(''),
+    signs_contract: z.boolean().optional().default(true),
+  })
+  .optional()
+  .default({});
+
+const onlyDigits = (v) => String(v ?? '').replace(/\D/g, '');
+
+/**
+ * Cria a pessoa principal de um cliente recém-cadastrado. O que a pessoa não informou vem do cadastro do cliente
+ * (nome, e-mail, telefone, CPF quando o documento é um CPF, nascimento).
+ */
+export async function createPrimaryPerson(userId, client, person = {}, conn = db) {
+  const real = client.email && !String(client.email).endsWith('@sem-email.invalid') ? client.email : '';
+  const cpf = person.cpf || (onlyDigits(client.document).length === 11 ? client.document : '');
+  return createPerson(
+    userId,
+    {
+      name: person.name || client.name,
+      gender: person.gender ?? '',
+      birth_date: person.birth_date ?? client.birth_date ?? null,
+      email: person.email || real,
+      phone: person.phone || client.phone || '',
+      phone2: person.phone2 ?? '',
+      role: person.role ?? '',
+      rg: person.rg ?? '',
+      cpf,
+      signs_contract: person.signs_contract ?? true,
+      guarantor: false,
+      active: true,
+      is_primary: true,
+    },
+    conn,
+  );
+}
+
 export const presentPerson = (p) => ({
   id: Number(p.id),
   user_id: Number(p.user_id),

@@ -383,6 +383,20 @@ const migrations = [
       `CREATE INDEX idx_client_people_user ON client_people (user_id)`,
     ],
   },
+  {
+    // Clientes cadastrados antes das pessoas (ou sem nenhuma) ganham a pessoa principal, com os dados do próprio cadastro.
+    id: '018_client_people_backfill',
+    statements: () => [
+      `INSERT INTO client_people (user_id, name, birth_date, email, phone, cpf, signs_contract, active, is_primary, created_at)
+       SELECT u.id, u.name, u.birth_date,
+              CASE WHEN u.email LIKE '%@sem-email.invalid' THEN '' ELSE u.email END,
+              u.phone,
+              CASE WHEN LENGTH(u.document) = 11 THEN u.document ELSE '' END,
+              1, 1, 1, u.created_at
+         FROM users u
+        WHERE u.role = 'client' AND NOT EXISTS (SELECT 1 FROM client_people p WHERE p.user_id = u.id)`,
+    ],
+  },
 ];
 
 export async function migrate() {

@@ -38,7 +38,7 @@ import { DATE_RE, TIME_RE, addDays, daysBetween, isValidDate, nowLocal, nowStamp
 import { birthDateField } from '../utils/birthDate.js';
 import { isPlaceholderEmail, placeholderEmail, shownEmail } from '../utils/email.js';
 import { MAX_ROWS_PER_REQUEST, importClients } from '../services/clientImport.js';
-import { createPerson, listPeople, personSchema, presentPerson, updatePerson } from '../services/clientPeople.js';
+import { createPerson, createPrimaryPerson, listPeople, registrationPerson, personSchema, presentPerson, updatePerson } from '../services/clientPeople.js';
 import { monthStatement, presentRoom } from './app.js';
 
 const router = express.Router();
@@ -543,7 +543,7 @@ async function assertPlanExists(planId) {
 router.post(
   '/users',
   asyncHandler(async (req, res) => {
-    const d = parse(userInput, req.body);
+    const d = parse(userInput.extend({ person: registrationPerson }), req.body);
     // Sem e-mail o cliente não entra sozinho no sistema: dispensa a senha inicial (a recepção reserva por ele).
     const semEmail = !d.email;
     if (!semEmail && !d.password) throw new HttpError(400, 'Defina uma senha inicial (mín. 8 caracteres).');
@@ -552,11 +552,17 @@ router.post(
     const access = await resolveAccess(d, null, req.user);
     const email = semEmail ? placeholderEmail(d.name) : d.email;
     const password = d.password || crypto.randomBytes(18).toString('base64url');
-    const r = await db.run(
-      `INSERT INTO users (name, email, password, role, profile_id, phone, document, company, city, state, tags, birth_date, plan_id, notes, active, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [d.name, email, await bcrypt.hash(password, 10), access.role, access.profile_id, d.phone, d.document, d.company, d.city, d.state, d.tags, d.birth_date ?? null, d.plan_id ?? null, d.notes, d.active ? 1 : 0, nowStamp(), nowStamp()],
-    );
+    const hash = await bcrypt.hash(password, 10);
+    const r = await db.transaction(async (tx) => {
+      const ins = await tx.run(
+        `INSERT INTO users (name, email, password, role, profile_id, phone, document, company, city, state, tags, birth_date, plan_id, notes, active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [d.name, email, hash, access.role, access.profile_id, d.phone, d.document, d.company, d.city, d.state, d.tags, d.birth_date ?? null, d.plan_id ?? null, d.notes, d.active ? 1 : 0, nowStamp(), nowStamp()],
+      );
+      // Todo cliente nasce com a pessoa principal cadastrada (o que não for informado vem do próprio cadastro).
+      if (access.role === 'client') await createPrimaryPerson(ins.insertId, { name: d.name, email: d.email, phone: d.phone, document: d.document, birth_date: d.birth_date ?? null }, d.person, tx);
+      return ins;
+    });
     res.status(201).json({ user: presentUser(await getUserRow(r.insertId)) });
   }),
 );

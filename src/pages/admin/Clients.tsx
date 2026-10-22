@@ -16,6 +16,7 @@ import { ImportClientsModal } from './ImportClients';
 import type { AccessProfile, Booking, Client, ClientPerson, Plan, Statement } from '../../types';
 
 const PER_PAGE = 25;
+const emptyPerson = { name: '', gender: '', birth_date: '', cpf: '', rg: '', role: '', email: '', phone2: '', signs_contract: true };
 const emptyForm = { name: '', email: '', password: '', profile_id: '', phone: '', document: '', company: '', city: '', state: '', tags: '', birth_date: '', plan_id: '', notes: '', active: true };
 
 export default function AdminClients() {
@@ -151,6 +152,7 @@ function ClientForm({ open, client, plans, profiles, onClose, onSaved, onDelete 
   const [f, setF] = useState(emptyForm);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [pf, setPf] = useState(emptyPerson);
   const [seed, setSeed] = useState<number | null | undefined>(undefined);
 
   // Reinicia ao abrir
@@ -159,6 +161,7 @@ function ClientForm({ open, client, plans, profiles, onClose, onSaved, onDelete 
     setSeed(key);
     if (open) {
       setError('');
+      setPf(emptyPerson);
       setF(client ? {
         name: client.name, email: client.email, password: '', profile_id: client.profile_id ? String(client.profile_id) : '', phone: client.phone, document: client.document,
         company: client.company, city: client.city ?? '', state: client.state ?? '', tags: client.tags ?? '', birth_date: client.birth_date ?? '', plan_id: client.plan_id ? String(client.plan_id) : '', notes: client.notes, active: client.active,
@@ -168,6 +171,8 @@ function ClientForm({ open, client, plans, profiles, onClose, onSaved, onDelete 
 
   const set = (k: keyof typeof emptyForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setF((s) => ({ ...s, [k]: e.target.value }));
 
+  const setP = (k: keyof typeof emptyPerson) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setPf((s) => ({ ...s, [k]: e.target.value }));
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
@@ -176,6 +181,7 @@ function ClientForm({ open, client, plans, profiles, onClose, onSaved, onDelete 
       const { profile_id, ...rest } = f;
       const body = {
         ...rest,
+        ...(client ? {} : { person: pf }),
         plan_id: f.plan_id ? Number(f.plan_id) : null,
         password: f.password || undefined,
         // Sem permissão para gerenciar perfis, o acesso ao painel fica como está.
@@ -240,6 +246,27 @@ function ClientForm({ open, client, plans, profiles, onClose, onSaved, onDelete 
           </div>
         )}
         <div className="flex items-end pb-2"><Switch checked={f.active} onChange={(v) => setF((s) => ({ ...s, active: v }))} label="Conta ativa" description="Desativada, não consegue entrar." /></div>
+        {!client && (
+          <>
+            <div className="border-t border-ink/8 pt-4 sm:col-span-2">
+              <h3 className="font-display text-[16px] font-medium text-ink">Pessoa principal</h3>
+              <p className="mt-0.5 text-[12.5px] text-stone">Titular, sócio ou responsável. O que ficar em branco é preenchido com os dados do cliente; outras pessoas entram depois, na ficha do cliente.</p>
+            </div>
+            <Input label="Nome da pessoa" maxLength={120} placeholder="Igual ao do cliente" value={pf.name} onChange={setP('name')} />
+            <Input label="Cargo / função" maxLength={80} value={pf.role} onChange={setP('role')} />
+            <Select label="Sexo" value={pf.gender} onChange={setP('gender')}>
+              <option value="">Não informado</option>
+              <option value="Feminino">Feminino</option>
+              <option value="Masculino">Masculino</option>
+            </Select>
+            <Input label="Nascimento da pessoa" type="date" min="1900-01-01" max={todayStr()} value={pf.birth_date} onChange={setP('birth_date')} />
+            <Input label="CPF da pessoa" inputMode="numeric" maxLength={14} value={pf.cpf} onChange={setP('cpf')} />
+            <Input label="RG" maxLength={20} value={pf.rg} onChange={setP('rg')} />
+            <Input label="E-mail da pessoa" type="email" maxLength={160} value={pf.email} onChange={setP('email')} />
+            <Input label="Outro telefone" maxLength={30} value={pf.phone2} onChange={setP('phone2')} />
+            <div className="sm:col-span-2"><Switch checked={pf.signs_contract} onChange={(v) => setPf((s) => ({ ...s, signs_contract: v }))} label="Assina o contrato" /></div>
+          </>
+        )}
         {client?.legacy_code && <p className="text-[12.5px] text-stone-light sm:col-span-2">Cliente nº {client.legacy_code} no sistema anterior.</p>}
         <Textarea containerClassName="sm:col-span-2" label="Observações internas" value={f.notes} onChange={set('notes')} />
       </form>

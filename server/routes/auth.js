@@ -7,6 +7,7 @@ import { db } from '../db/index.js';
 import { DEFAULT_PLAN_NAME } from '../db/migrate.js';
 import { signToken, verifyToken } from '../middleware/auth.js';
 import { permissionsFor } from '../services/access.js';
+import { createPrimaryPerson, registrationPerson } from '../services/clientPeople.js';
 import { getSettings } from '../services/settings.js';
 import { HttpError, asyncHandler, parse, rateLimit } from '../utils/http.js';
 import { sendTemplated } from '../services/emailTemplates.js';
@@ -59,19 +60,36 @@ router.post(
         password,
         phone: z.string().trim().max(30).optional().default(''),
         company: z.string().trim().max(120).optional().default(''),
+        document: z.string().trim().max(20).optional().default(''),
+        city: z.string().trim().max(80).optional().default(''),
+        state: z.string().trim().toUpperCase().max(2).optional().default(''),
+        // Pessoa física: a pessoa é o próprio cliente. Empresa: o cadastro é da empresa e a pessoa é o responsável.
+        kind: z.enum(['individual', 'company']).optional().default('individual'),
+        person: registrationPerson,
       }),
       req.body,
     );
+    const company = data.kind === 'company';
+    if (company && !data.person.name) throw new HttpError(422, 'Informe o nome do responsável pela empresa.');
+    const person = company ? data.person : { ...data.person, name: data.name };
+    // Pessoa física: o CPF vale para o cadastro e para a pessoa; o nascimento também.
+    const document = data.document || (company ? '' : person.cpf ?? '');
+    const birth = company ? null : (person.birth_date ?? null);
 
     const exists = await db.get('SELECT id FROM users WHERE email = ?', [data.email]);
     if (exists) throw new HttpError(409, 'Já existe uma conta com esse e-mail. Tente entrar.');
 
     const avulso = await db.get('SELECT id FROM plans WHERE name = ? AND active = 1', [DEFAULT_PLAN_NAME]);
-    const r = await db.run(
-      `INSERT INTO users (name, email, password, role, phone, company, plan_id, created_at, updated_at)
-       VALUES (?, ?, ?, 'client', ?, ?, ?, ?, ?)`,
-      [data.name, data.email, await bcrypt.hash(data.password, 10), data.phone, data.company, avulso?.id ?? null, nowStamp(), nowStamp()],
-    );
+    const userId = await db.transaction(async (tx) => {
+      const r = await tx.run(
+        `INSERT INTO users (name, email, password, role, phone, document, company, city, state, birth_date, plan_id, created_at, updated_at)
+         VALUES (?, ?, ?, 'client', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [data.name, data.email, await bcrypt.hash(data.password, 10), data.phone, document, data.company, data.city, data.state, birth, avulso?.id ?? null, nowStamp(), nowStamp()],
+      );
+      await createPrimaryPerson(r.insertId, { name: data.name, email: data.email, phone: data.phone, document, birth_date: birth }, person, tx);
+      return r.insertId;
+    });
+    const r = { insertId: userId };
 
     const user = await publicUser(r.insertId);
     sendTemplated('welcome', {

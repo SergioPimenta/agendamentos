@@ -255,6 +255,41 @@ describe('importação de clientes', () => {
     assert.equal((await call('GET', `/admin/users/${co.id}`, { token: (await call('POST', '/auth/register', { body: { name: 'Qualquer', email: 'q@exemplo.com', password: 'senha-forte-1' } })).body.token })).status, 403);
   });
 
+  it('o cadastro pelo site já cria a pessoa (física e empresa)', async () => {
+    const pf = await call('POST', '/auth/register', { body: {
+      name: 'Joana Cadastro', email: 'joana@exemplo.com', password: 'senha-forte-1', phone: '(41) 99999-1111', city: 'Curitiba', state: 'pr',
+      kind: 'individual', person: { gender: 'Feminino', birth_date: '1990-05-06', cpf: '52998224725', rg: '1234567', role: 'Psicóloga', phone2: '(41) 3333-2222' },
+    } });
+    assert.equal(pf.status, 201);
+    const u = await db.get('SELECT * FROM users WHERE email = ?', ['joana@exemplo.com']);
+    assert.deepEqual([u.city, u.state, u.document, u.birth_date], ['Curitiba', 'PR', '52998224725', '1990-05-06']);
+    const [p] = await db.query('SELECT * FROM client_people WHERE user_id = ?', [u.id]);
+    assert.deepEqual([p.name, p.gender, p.cpf, p.rg, p.role, p.email, p.phone, p.is_primary, p.signs_contract], ['Joana Cadastro', 'Feminino', '52998224725', '1234567', 'Psicóloga', 'joana@exemplo.com', '(41) 99999-1111', 1, 1]);
+
+    const semResp = await call('POST', '/auth/register', { body: { name: 'Empresa X Ltda', email: 'empresa-x@exemplo.com', password: 'senha-forte-1', kind: 'company', document: '11222333000181' } });
+    assert.equal(semResp.status, 422); // empresa precisa do responsável
+
+    const pj = await call('POST', '/auth/register', { body: {
+      name: 'Empresa X Ltda', company: 'Studio X', email: 'empresa-x@exemplo.com', password: 'senha-forte-1', kind: 'company', document: '11222333000181',
+      person: { name: 'Carlos Responsável', cpf: '39053344705', birth_date: '1985-01-02', email: 'carlos@exemplo.com', role: 'Sócio' },
+    } });
+    assert.equal(pj.status, 201);
+    const e = await db.get('SELECT * FROM users WHERE email = ?', ['empresa-x@exemplo.com']);
+    assert.deepEqual([e.company, e.document, e.birth_date], ['Studio X', '11222333000181', null]);
+    const [r] = await db.query('SELECT * FROM client_people WHERE user_id = ?', [e.id]);
+    assert.deepEqual([r.name, r.cpf, r.email, r.birth_date, r.role], ['Carlos Responsável', '39053344705', 'carlos@exemplo.com', '1985-01-02', 'Sócio']);
+  });
+
+  it('o cadastro pela administração também cria a pessoa principal', async () => {
+    const plain = await call('POST', '/admin/users', { token: admin, body: { name: 'Só Cadastro', email: 'so-cadastro@exemplo.com', password: 'senha-forte-1', phone: '(41) 98888-0000', document: '52998224725' } });
+    const people = (await call('GET', `/admin/users/${plain.body.user.id}`, { token: admin })).body.people;
+    assert.deepEqual(people.map((p) => [p.name, p.cpf, p.phone, p.is_primary, p.signs_contract]), [['Só Cadastro', '52998224725', '(41) 98888-0000', true, true]]);
+
+    const full = await call('POST', '/admin/users', { token: admin, body: { name: 'Com Pessoa Ltda', document: '11222333000181', person: { name: 'Marta Dona', gender: 'Feminino', rg: '99', signs_contract: false } } });
+    const [m] = (await call('GET', `/admin/users/${full.body.user.id}`, { token: admin })).body.people;
+    assert.deepEqual([m.name, m.gender, m.rg, m.signs_contract, m.is_primary], ['Marta Dona', 'Feminino', '99', false, true]);
+  });
+
   it('só quem edita Clientes importa; lotes têm limite', async () => {
     const reg = await call('POST', '/auth/register', { body: { name: 'Cliente Comum', email: 'comum@exemplo.com', password: 'senha-forte-1' } });
     assert.equal((await importRows(sample, true, reg.body.token)).status, 403);

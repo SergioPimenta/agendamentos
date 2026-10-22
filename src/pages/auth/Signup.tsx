@@ -1,24 +1,46 @@
 import { useState, type FormEvent } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../../components/ui/Button';
-import { Input } from '../../components/ui/Form';
+import { Input, Select } from '../../components/ui/Form';
 import { useAuth } from '../../contexts/AuthContext';
+import { todayStr } from '../../lib/format';
 import { api } from '../../services/api';
 import type { User } from '../../types';
 import { AuthLayout } from './AuthLayout';
+
+type Kind = 'individual' | 'company';
+
+const blank = {
+  kind: 'individual' as Kind,
+  name: '', company: '', document: '', phone: '', city: '', state: '',
+  email: '', password: '',
+  // Pessoa física: é a própria pessoa. Empresa: o responsável.
+  p_name: '', p_gender: '', p_birth: '', p_cpf: '', p_rg: '', p_role: '', p_email: '', p_phone: '', p_phone2: '',
+};
+
+const Section = ({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) => (
+  <section className="flex flex-col gap-4 border-t border-ink/8 pt-5 first:border-0 first:pt-0">
+    <div>
+      <h2 className="font-display text-[16px] font-medium text-ink">{title}</h2>
+      {hint && <p className="mt-0.5 text-[12.5px] text-stone">{hint}</p>}
+    </div>
+    {children}
+  </section>
+);
 
 export default function Signup() {
   const { user, login, settings } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const from = (location.state as { from?: string } | null)?.from;
-  const [form, setForm] = useState({ name: '', email: '', phone: '', company: '', password: '' });
+  const [form, setForm] = useState(blank);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   if (user) return <Navigate to={from ?? '/app'} replace />;
 
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const set = (k: keyof typeof blank) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const company = form.kind === 'company';
 
   if (settings && !settings.allow_signup) {
     return (
@@ -34,7 +56,30 @@ export default function Signup() {
     if (form.password.length < 8) return setError('A senha precisa ter ao menos 8 caracteres.');
     setLoading(true);
     try {
-      const res = await api.post<{ token: string; user: User }>('/auth/register', form);
+      const body = {
+        kind: form.kind,
+        name: form.name,
+        email: form.email,
+        password: form.password,
+        phone: form.phone,
+        company: form.company,
+        document: form.document,
+        city: form.city,
+        state: form.state,
+        person: {
+          name: company ? form.p_name : form.name,
+          gender: form.p_gender,
+          birth_date: form.p_birth,
+          cpf: company ? form.p_cpf : form.document,
+          rg: form.p_rg,
+          role: form.p_role,
+          email: company ? form.p_email : form.email,
+          phone: company ? form.p_phone : form.phone,
+          phone2: form.p_phone2,
+          signs_contract: true,
+        },
+      };
+      const res = await api.post<{ token: string; user: User }>('/auth/register', body);
       login(res.token, res.user);
       navigate(from ?? '/app', { replace: true });
     } catch (err) {
@@ -44,22 +89,68 @@ export default function Signup() {
     }
   };
 
+  const personFields = (
+    <>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Select label="Sexo" value={form.p_gender} onChange={set('p_gender')}>
+          <option value="">Prefiro não informar</option>
+          <option value="Feminino">Feminino</option>
+          <option value="Masculino">Masculino</option>
+        </Select>
+        <Input label="Data de nascimento" type="date" min="1900-01-01" max={todayStr()} autoComplete="bday" value={form.p_birth} onChange={set('p_birth')} />
+        {company && <Input label="CPF do responsável" inputMode="numeric" maxLength={14} value={form.p_cpf} onChange={set('p_cpf')} />}
+        <Input label="RG" maxLength={20} value={form.p_rg} onChange={set('p_rg')} />
+        <Input label={company ? 'Cargo / função' : 'Profissão'} maxLength={80} value={form.p_role} onChange={set('p_role')} />
+        {company && <Input label="E-mail do responsável" type="email" autoComplete="email" hint="Se for diferente do e-mail de acesso." value={form.p_email} onChange={set('p_email')} />}
+        {company && <Input label="Telefone do responsável" type="tel" placeholder="(41) 99999-9999" value={form.p_phone} onChange={set('p_phone')} />}
+        <Input label="Outro telefone" type="tel" value={form.p_phone2} onChange={set('p_phone2')} />
+      </div>
+    </>
+  );
+
   return (
     <AuthLayout
       title="Crie seu acesso"
-      subtitle={from ? 'Leva menos de um minuto. Depois você volta direto para a reserva que estava fazendo.' : 'Leva menos de um minuto. Depois é só escolher a sala e o horário.'}
+      subtitle={from ? 'Preencha o cadastro uma vez. Depois você volta direto para a reserva que estava fazendo.' : 'Preencha o cadastro uma vez. Depois é só escolher a sala e o horário.'}
       footer={<>Já tem conta? <Link to="/login" state={location.state} className="font-semibold text-sage-700 no-underline hover:underline">Entrar</Link></>}
     >
-      <form onSubmit={submit} className="flex flex-col gap-4" noValidate>
+      <form onSubmit={submit} className="flex flex-col gap-6" noValidate>
         {error && <div role="alert" className="rounded-xl border border-rose/25 bg-rose-dim px-4 py-3 text-[13.5px] text-rose">{error}</div>}
-        <Input label="Nome completo" required autoComplete="name" autoFocus value={form.name} onChange={set('name')} />
-        <Input label="E-mail" type="email" required autoComplete="email" value={form.email} onChange={set('email')} />
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Input label="Telefone / WhatsApp" type="tel" autoComplete="tel" placeholder="(41) 99999-9999" value={form.phone} onChange={set('phone')} />
-          <Input label="Empresa ou profissão" value={form.company} onChange={set('company')} />
-        </div>
-        <Input label="Senha" type="password" required autoComplete="new-password" hint="Mínimo de 8 caracteres" value={form.password} onChange={set('password')} />
-        <Button type="submit" size="lg" loading={loading} className="mt-2 w-full">Criar conta</Button>
+
+        <Section title="Tipo de cadastro">
+          <Select label="Você vai reservar como" value={form.kind} onChange={set('kind')}>
+            <option value="individual">Pessoa física</option>
+            <option value="company">Empresa (CNPJ)</option>
+          </Select>
+        </Section>
+
+        <Section title={company ? 'Dados da empresa' : 'Seus dados'}>
+          <Input label={company ? 'Razão social' : 'Nome completo'} required autoComplete={company ? 'organization' : 'name'} autoFocus value={form.name} onChange={set('name')} />
+          {company && <Input label="Nome fantasia" value={form.company} onChange={set('company')} />}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Input label={company ? 'CNPJ' : 'CPF'} required inputMode="numeric" maxLength={company ? 18 : 14} placeholder={company ? '00.000.000/0000-00' : '000.000.000-00'} value={form.document} onChange={set('document')} />
+            <Input label={company ? 'Telefone da empresa' : 'Telefone / WhatsApp'} type="tel" required autoComplete="tel" placeholder="(41) 99999-9999" value={form.phone} onChange={set('phone')} />
+            <Input label="Cidade" autoComplete="address-level2" maxLength={80} value={form.city} onChange={set('city')} />
+            <Input label="UF" autoComplete="address-level1" maxLength={2} placeholder="PR" value={form.state} onChange={set('state')} />
+          </div>
+          {!company && <Input label="Nome do seu negócio" hint="Opcional. Empresa, consultório, estúdio…" value={form.company} onChange={set('company')} />}
+        </Section>
+
+        {company ? (
+          <Section title="Responsável pela empresa" hint="Quem assina o contrato e fala pela empresa.">
+            <Input label="Nome do responsável" required autoComplete="name" value={form.p_name} onChange={set('p_name')} />
+            {personFields}
+          </Section>
+        ) : (
+          <Section title="Mais sobre você">{personFields}</Section>
+        )}
+
+        <Section title="Acesso ao sistema">
+          <Input label="E-mail" type="email" required autoComplete="email" value={form.email} onChange={set('email')} />
+          <Input label="Senha" type="password" required autoComplete="new-password" hint="Mínimo de 8 caracteres" value={form.password} onChange={set('password')} />
+        </Section>
+
+        <Button type="submit" size="lg" loading={loading} className="w-full">Criar conta</Button>
       </form>
     </AuthLayout>
   );
