@@ -111,6 +111,22 @@ export const TEMPLATES = [
     },
   },
   {
+    key: 'login_code',
+    group: 'Conta',
+    name: 'Código do primeiro acesso',
+    description: 'Enviado quando o cliente (por exemplo, vindo do sistema anterior) pede o primeiro acesso por código. Não pode ser desligado.',
+    recipient: 'Cliente',
+    locked: true,
+    variables: [{ name: 'nome', label: 'Primeiro nome do cliente' }, { name: 'codigo_acesso', label: 'Código de 6 números' }],
+    defaults: {
+      subject: 'Seu código de acesso — {{empresa}}',
+      title: 'Seu código de acesso',
+      body:
+        'Olá, {{nome}}! Use o código abaixo para entrar pela primeira vez no sistema de agendamento:\n\n{{codigo_acesso}}\n\nO código vale por 15 minutos. Se não foi você quem pediu, ignore este e-mail.',
+      cta_label: '',
+    },
+  },
+  {
     key: 'booking_confirmed',
     group: 'Reservas',
     name: 'Confirmação da reserva',
@@ -502,6 +518,7 @@ export function sampleData(key, viewer = {}) {
     anfitriao: 'Maria Souza',
     anfitriao_email: 'maria@exemplo.com.br',
     convidado: 'Carlos',
+    codigo_acesso: '123456',
     titulo: 'Reunião de equipe',
     recorrencia: 'Este encontro se repete toda semana (4 vezes).',
     entrada: '14:00',

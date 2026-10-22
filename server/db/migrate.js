@@ -478,6 +478,17 @@ const migrations = [
       `CREATE INDEX idx_bookings_date_status ON bookings (date, status)`,
     ],
   },
+  {
+    // Primeiro acesso por código enviado ao e-mail (clientes vindos do sistema anterior).
+    id: '024_first_login_code',
+    statements: () => [
+      `ALTER TABLE users ADD COLUMN login_code_hash VARCHAR(64) NULL`,
+      `ALTER TABLE users ADD COLUMN login_code_expires VARCHAR(19) NULL`,
+      `ALTER TABLE users ADD COLUMN login_code_sent_at VARCHAR(19) NULL`,
+      `ALTER TABLE users ADD COLUMN login_code_attempts INT NOT NULL DEFAULT 0`,
+      `ALTER TABLE users ADD COLUMN first_login_until VARCHAR(19) NULL`,
+    ],
+  },
 ];
 
 export async function migrate() {

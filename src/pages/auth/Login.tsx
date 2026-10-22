@@ -78,6 +78,15 @@ export default function Login() {
         <Button type="submit" size="lg" loading={loading} className="w-full">
           Entrar <ArrowRight size={16} />
         </Button>
+        <div className="flex items-center gap-3 text-[12px] text-stone-light before:h-px before:flex-1 before:bg-ink/10 after:h-px after:flex-1 after:bg-ink/10">ou</div>
+        <Link
+          to="/primeiro-acesso"
+          state={location.state}
+          className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-sage-700/40 px-6 py-3 text-[14px] font-semibold text-sage-700 no-underline transition-colors hover:bg-sage-dim"
+        >
+          Primeiro login
+        </Link>
+        <p className="-mt-2 text-center text-[12.5px] text-stone">Já era cliente do sistema anterior? Entre com um código enviado ao seu e-mail.</p>
       </form>
     </AuthLayout>
   );

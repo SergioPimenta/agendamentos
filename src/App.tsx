@@ -9,6 +9,7 @@ import type { ModuleKey } from './types';
 import { PublicShell } from './components/layout/PublicShell';
 import PublicHome from './pages/public/PublicHome';
 import Login from './pages/auth/Login';
+import FirstLogin from './pages/auth/FirstLogin';
 import Signup from './pages/auth/Signup';
 import { ForgotPassword, ResetPassword } from './pages/auth/PasswordRecovery';
 import ClientHome from './pages/app/ClientHome';
@@ -117,6 +118,7 @@ export default function App() {
           </Route>
           <Route path="/login" element={<Login />} />
           <Route path="/cadastro" element={<Signup />} />
+          <Route path="/primeiro-acesso" element={<FirstLogin />} />
           <Route path="/esqueci-senha" element={<ForgotPassword />} />
           <Route path="/redefinir-senha" element={<ResetPassword />} />
 
