@@ -99,7 +99,8 @@ O endereço do webhook leva um segredo e o servidor precisa ser acessível pela 
 ```
 server/
   index.js            app Express (createApp: helmet, CORS, rotas, serve dist/)
-  start.js            sobe o servidor e as rotinas em segundo plano (npm start / Hostinger)
+  start.js            sobe o servidor e as rotinas em segundo plano (npm start)
+  start.cjs           entrada para hospedagens que usam require() (Hostinger): carrega o start.js
   config.js           variáveis de ambiente
   db/                 adaptador SQLite/MySQL, migrações e seed
   services/           disponibilidade, reservas (preço, recorrência, cancelamento), configurações
@@ -125,7 +126,7 @@ Funciona em planos com *Node.js Web Apps* (Business ou Cloud). Um único process
 4. **Configurações do deploy:**
    - Framework: **Other** · Node.js: **22** (ou 24)
    - Comando de build: `build`
-   - Arquivo de entrada (*Entry file*): `server/start.js`
+   - Arquivo de entrada (*Entry file*): `server/start.cjs` (a Hostinger carrega o arquivo com `require()`, que não aceita o `start.js` por ele ser ESM com `await` no topo; o `.cjs` apenas o carrega por `import()`)
    - Deixe o diretório de saída vazio.
    - O `npm install` da raiz já instala também as dependências de `server/` (script `postinstall`).
 5. **Variáveis de ambiente** (na mesma tela): `NODE_ENV=production`, `JWT_SECRET` (24+ caracteres), `APP_URL` (ex.: `https://agenda.harmonizeoser.com.br`),
