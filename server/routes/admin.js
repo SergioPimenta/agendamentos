@@ -38,6 +38,7 @@ import { DATE_RE, TIME_RE, addDays, daysBetween, isValidDate, nowLocal, nowStamp
 import { birthDateField } from '../utils/birthDate.js';
 import { isPlaceholderEmail, placeholderEmail, shownEmail } from '../utils/email.js';
 import { MAX_ROWS_PER_REQUEST, importClients } from '../services/clientImport.js';
+import { createPerson, listPeople, personSchema, presentPerson, updatePerson } from '../services/clientPeople.js';
 import { monthStatement, presentRoom } from './app.js';
 
 const router = express.Router();
@@ -50,6 +51,7 @@ router.use('/bookings', requireModule(['bookings', 'agenda']));
 router.use('/birthdays', requireModule(['birthdays']));
 router.use('/packages', requireModule(['packages']));
 router.use('/hour-bank', requireModule(['hour_bank']));
+router.use('/people', requireModule(['clients']));
 router.use('/rooms', requireModule(['rooms'], ['agenda', 'bookings', 'packages']));
 router.use('/upload', requireModule(['rooms']));
 router.use('/plans', requireModule(['plans'], ['clients', 'finance']));
@@ -490,14 +492,15 @@ router.get(
 router.post(
   '/users/import',
   asyncHandler(async (req, res) => {
-    const { rows, dry_run } = parse(
+    const { rows, dry_run, update } = parse(
       z.object({
         rows: z.array(z.record(z.string(), z.any())).min(1, 'Nenhum cliente para importar').max(MAX_ROWS_PER_REQUEST, `Envie até ${MAX_ROWS_PER_REQUEST} clientes por vez`),
         dry_run: z.boolean().optional().default(false),
+        update: z.boolean().optional().default(false),
       }),
       req.body,
     );
-    res.json(await importClients({ rows, dryRun: dry_run }));
+    res.json(await importClients({ rows, dryRun: dry_run, update }));
   }),
 );
 
@@ -519,6 +522,7 @@ router.get(
     );
     res.json({
       user: presentUser(u),
+      people: await listPeople(uid),
       statement: await monthStatement(uid, month, rules, req.user.id),
       history: history.map((r) => serializeBooking(r, { rules, now, isAdmin: true })),
       lifetime: { bookings: Number(life.bookings), minutes: Number(life.minutes), amount_cents: Number(life.amount), pending_cents: Number(life.pending) },
@@ -594,6 +598,7 @@ router.delete(
     }
     const used = await db.get('SELECT COUNT(*) AS n FROM bookings WHERE user_id = ?', [uid]);
     if (Number(used.n) > 0) throw new HttpError(409, 'Este cliente tem reservas no histórico. Desative a conta em vez de excluir.');
+    await db.run('DELETE FROM client_people WHERE user_id = ?', [uid]);
     await db.run('DELETE FROM users WHERE id = ?', [uid]);
     res.json({ ok: true });
   }),
@@ -604,6 +609,50 @@ router.post(
   asyncHandler(async (req, res) => {
     const { month } = parse(z.object({ month: z.string().regex(/^\d{4}-\d{2}$/) }), req.body);
     res.json({ updated: await payInvoice({ userId: Number(req.params.id), month, method: 'outro' }) });
+  }),
+);
+
+/* ---------------- pessoas do cliente ---------------- */
+
+router.post(
+  '/users/:id/people',
+  asyncHandler(async (req, res) => {
+    const uid = Number(req.params.id);
+    if (!(await db.get('SELECT id FROM users WHERE id = ?', [uid]))) throw new HttpError(404, 'Cliente não encontrado.');
+    const d = parse(personSchema, req.body);
+    const first = Number((await db.get('SELECT COUNT(*) AS n FROM client_people WHERE user_id = ?', [uid])).n) === 0;
+    const pid = await createPerson(uid, first ? { ...d, is_primary: true } : d);
+    res.status(201).json({ person: presentPerson(await db.get('SELECT * FROM client_people WHERE id = ?', [pid])) });
+  }),
+);
+
+router.put(
+  '/people/:id',
+  asyncHandler(async (req, res) => {
+    const pid = Number(req.params.id);
+    const current = await db.get('SELECT * FROM client_people WHERE id = ?', [pid]);
+    if (!current) throw new HttpError(404, 'Pessoa não encontrada.');
+    // O que não vier no pedido continua como está (inclusive "principal" e "assina o contrato").
+    const { id: _id, user_id: _uid, legacy_id: _legacy, ...now } = presentPerson(current);
+    const d = parse(personSchema, { ...now, ...req.body });
+    await updatePerson(pid, d);
+    res.json({ person: presentPerson(await db.get('SELECT * FROM client_people WHERE id = ?', [pid])) });
+  }),
+);
+
+router.delete(
+  '/people/:id',
+  asyncHandler(async (req, res) => {
+    const pid = Number(req.params.id);
+    const current = await db.get('SELECT user_id, is_primary FROM client_people WHERE id = ?', [pid]);
+    if (!current) throw new HttpError(404, 'Pessoa não encontrada.');
+    await db.run('DELETE FROM client_people WHERE id = ?', [pid]);
+    // Se saiu a principal, a próxima assume.
+    if (Number(current.is_primary)) {
+      const next = await db.get('SELECT id FROM client_people WHERE user_id = ? ORDER BY id LIMIT 1', [current.user_id]);
+      if (next) await db.run('UPDATE client_people SET is_primary = 1 WHERE id = ?', [next.id]);
+    }
+    res.json({ ok: true });
   }),
 );
 

@@ -155,6 +155,106 @@ describe('importação de clientes', () => {
     assert.equal((await call('POST', '/admin/users', { token: admin, body: { name: 'Com Email Sem Senha', email: 'x@exemplo.com' } })).status, 400); // com e-mail, a senha continua obrigatória
   });
 
+  it('importa as pessoas de cada cliente e leva os dados da principal para o cadastro', async () => {
+    const r = await importRows([
+      {
+        codigo_antigo: '8001', nome: 'EDUARDO APARECIDO MORAIS DOIS', cidade: 'Curitiba', uf: 'PR', cadastro: '2026-05-01',
+        pessoas: [{ nome: 'Eduardo Aparecido Morais Dois', sexo: 'Masculino', nascimento: '1967-05-01', email: 'Eduardo.Dois@Exemplo.com', telefone: '(41) 99111-0000', telefone2: '(41) 3333-0000', rg: '158678813', cpf: '043.502.348-96', assina: 'Sim', ativo: true, codigo_pessoa: '552' }],
+      },
+      {
+        codigo_antigo: '8002', nome: 'NEW ARC COLETIVO DE EVENTOS LTDA', cidade: 'Curitiba', uf: 'PR', telefone: '(11) 90000-0000',
+        pessoas: [
+          { nome: 'Gabriel Auxiliar', cargo: 'Assistente', email: 'gabriel@newarc.ag', assina: 'Não' },
+          { nome: 'Rosangela Gestora', sexo: 'Feminino', nascimento: '1994-03-09', email: 'adm@newarc.ag', cargo: 'GESTORA FINANCEIRA', cpf: '43591489840', rg: '437940780', assina: 'Sim', fiador: 'Não' },
+        ],
+      },
+    ]);
+    assert.deepEqual([r.body.created, r.body.people], [2, 3]);
+
+    // Pessoa física (titular = cliente): e-mail, telefone, nascimento e CPF vão para o cadastro.
+    const pf = await db.get("SELECT * FROM users WHERE legacy_code = '8001'");
+    assert.equal(pf.email, 'eduardo.dois@exemplo.com');
+    assert.equal(pf.phone, '(41) 99111-0000');
+    assert.equal(pf.birth_date, '1967-05-01');
+    assert.equal(pf.document, '04350234896');
+    const people = await db.query('SELECT * FROM client_people WHERE user_id = ?', [pf.id]);
+    assert.equal(people.length, 1);
+    assert.deepEqual([people[0].gender, people[0].phone2, people[0].rg, people[0].cpf, Number(people[0].signs_contract), Number(people[0].is_primary), people[0].legacy_id], ['Masculino', '(41) 3333-0000', '158678813', '04350234896', 1, 1, '552']);
+
+    // Empresa: o e-mail é o de quem assina; nascimento e CPF ficam só na pessoa (não são da empresa).
+    const co = await db.get("SELECT * FROM users WHERE legacy_code = '8002'");
+    assert.equal(co.email, 'adm@newarc.ag');
+    assert.equal(co.phone, '(11) 90000-0000');
+    assert.equal(co.birth_date, null);
+    assert.equal(co.document, '');
+    const team = await db.query('SELECT name, role, cpf, is_primary FROM client_people WHERE user_id = ? ORDER BY id', [co.id]);
+    assert.deepEqual(team.map((p) => [p.name, Number(p.is_primary)]), [['Gabriel Auxiliar', 0], ['Rosangela Gestora', 1]]);
+    assert.equal(team[1].role, 'GESTORA FINANCEIRA');
+  });
+
+  it('aceita as colunas pessoa_* da planilha e não perde o cliente se o e-mail já é de outro', async () => {
+    const r = await importRows([{
+      codigo_antigo: '8003', nome: 'Cliente Colunas', pessoa_nome: 'Cliente Colunas', pessoa_email: 'adm@newarc.ag', pessoa_telefone: '(41) 98888-7777',
+      pessoa_cpf: '111.222.333-96', pessoa_nascimento: '1990-02-02', pessoa_assina: 'sim',
+      pessoa2_nome: 'Segunda Pessoa', pessoa2_cargo: 'Sócia',
+    }]);
+    assert.equal(r.body.created, 1);
+    const u = await db.get("SELECT * FROM users WHERE legacy_code = '8003'");
+    assert.ok(isPlaceholderEmail(u.email)); // adm@newarc.ag já é da NEW ARC: não duplica nem descarta o cliente
+    assert.match(u.notes, /adm@newarc\.ag já pertence a outro cadastro/);
+    assert.equal(u.phone, '(41) 98888-7777');
+    assert.equal(Number((await db.get('SELECT COUNT(*) AS n FROM client_people WHERE user_id = ?', [u.id])).n), 2);
+  });
+
+  it('completar clientes já importados preenche só o que estava vazio', async () => {
+    // O cliente 608 já foi importado sem e-mail e sem pessoas (importação anterior).
+    const before = await db.get("SELECT * FROM users WHERE legacy_code = '608'");
+    const row = {
+      codigo_antigo: '608', nome: 'EDUARDO APARECIDO MORAIS', telefone: '(99) 99999-9999', nascimento: '1967-05-01',
+      pessoas: [{ nome: 'Eduardo Aparecido Morais', email: 'mpm@exemplo.com', cpf: '39053344705', rg: '158678813', assina: 'Sim' }],
+    };
+    // Sem "completar", continua pulando.
+    assert.equal((await importRows([row])).body.skipped_count, 1);
+
+    const r = await call('POST', '/admin/users/import', { token: admin, body: { rows: [row], update: true } });
+    assert.deepEqual([r.body.updated, r.body.created, r.body.people], [1, 0, 1]);
+    const after = await db.get("SELECT * FROM users WHERE legacy_code = '608'");
+    assert.equal(after.email, 'mpm@exemplo.com'); // o e-mail reservado dá lugar ao real
+    assert.equal(after.phone, before.phone); // o que já existia não é sobrescrito
+    assert.equal(after.birth_date, before.birth_date); // já tinha data de nascimento: mantida
+    assert.equal(after.document, '39053344705');
+    assert.equal(Number((await db.get('SELECT COUNT(*) AS n FROM client_people WHERE user_id = ?', [after.id])).n), 1);
+
+    // Rodar de novo não faz nada.
+    const again = await call('POST', '/admin/users/import', { token: admin, body: { rows: [row], update: true } });
+    assert.deepEqual([again.body.updated, again.body.skipped_count], [0, 1]);
+  });
+
+  it('a administração gerencia as pessoas do cliente', async () => {
+    const co = await db.get("SELECT id FROM users WHERE legacy_code = '8002'");
+    const detail = await call('GET', `/admin/users/${co.id}`, { token: admin });
+    assert.deepEqual(detail.body.people.map((p) => p.name), ['Rosangela Gestora', 'Gabriel Auxiliar']); // a principal primeiro
+    assert.equal(detail.body.people[0].is_primary, true);
+
+    const add = await call('POST', `/admin/users/${co.id}/people`, { token: admin, body: { name: 'Nova Pessoa', gender: 'Feminino', role: 'Sócia', is_primary: true, signs_contract: true } });
+    assert.equal(add.status, 201);
+    assert.equal(add.body.person.is_primary, true);
+    const now = (await call('GET', `/admin/users/${co.id}`, { token: admin })).body.people;
+    assert.equal(now.filter((p) => p.is_primary).length, 1); // só uma principal
+
+    const edit = await call('PUT', `/admin/people/${add.body.person.id}`, { token: admin, body: { name: 'Nova Pessoa Editada', role: 'Diretora', birth_date: '1980-01-02', email: 'nova@exemplo.com' } });
+    assert.equal(edit.body.person.role, 'Diretora');
+    assert.equal(edit.body.person.birth_date, '1980-01-02');
+    assert.equal((await call('POST', `/admin/users/${co.id}/people`, { token: admin, body: { name: 'X' } })).status, 400);
+
+    // Excluir a principal passa o posto para outra.
+    await call('DELETE', `/admin/people/${add.body.person.id}`, { token: admin });
+    const left = (await call('GET', `/admin/users/${co.id}`, { token: admin })).body.people;
+    assert.equal(left.length, 2);
+    assert.equal(left.filter((p) => p.is_primary).length, 1);
+    assert.equal((await call('GET', `/admin/users/${co.id}`, { token: (await call('POST', '/auth/register', { body: { name: 'Qualquer', email: 'q@exemplo.com', password: 'senha-forte-1' } })).body.token })).status, 403);
+  });
+
   it('só quem edita Clientes importa; lotes têm limite', async () => {
     const reg = await call('POST', '/auth/register', { body: { name: 'Cliente Comum', email: 'comum@exemplo.com', password: 'senha-forte-1' } });
     assert.equal((await importRows(sample, true, reg.body.token)).status, 403);

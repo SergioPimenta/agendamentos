@@ -11,8 +11,9 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useApi, useDebounced } from '../../hooks/useApi';
 import { fmtDateFull, fmtDuration, fmtMoney, fmtMonth, todayStr } from '../../lib/format';
 import { api } from '../../services/api';
+import { PeopleSection } from './ClientPeople';
 import { ImportClientsModal } from './ImportClients';
-import type { AccessProfile, Booking, Client, Plan, Statement } from '../../types';
+import type { AccessProfile, Booking, Client, ClientPerson, Plan, Statement } from '../../types';
 
 const emptyForm = { name: '', email: '', password: '', profile_id: '', phone: '', document: '', company: '', city: '', state: '', tags: '', birth_date: '', plan_id: '', notes: '', active: true };
 
@@ -223,6 +224,7 @@ function ClientForm({ open, client, plans, profiles, onClose, onSaved, onDelete 
 
 interface Detail {
   user: Client;
+  people: ClientPerson[];
   statement: Statement;
   history: Booking[];
   lifetime: { bookings: number; minutes: number; amount_cents: number; pending_cents: number };
@@ -275,6 +277,8 @@ function ClientDetail({ id, onClose, onEdit, onChanged }: { id: number | null; o
                 {d.user.legacy_code && <>Cliente nº {d.user.legacy_code} no sistema anterior. </>}{d.user.notes}
               </p>
             )}
+
+            <PeopleSection userId={d.user.id} people={d.people} canEdit={canEdit} onChanged={() => { q.reload(); onChanged(); }} />
 
             <div className="grid gap-3 sm:grid-cols-3">
               {[

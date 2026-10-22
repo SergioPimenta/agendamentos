@@ -357,6 +357,32 @@ const migrations = [
       `CREATE INDEX idx_users_legacy_code ON users (legacy_code)`,
     ],
   },
+  {
+    // Pessoas de cada cliente (titular, sócios, responsáveis): contato, documentos e se assina o contrato ou é fiador.
+    id: '017_client_people',
+    statements: () => [
+      `CREATE TABLE IF NOT EXISTS client_people (
+        id ${pk()},
+        user_id INT NOT NULL,
+        name VARCHAR(120) NOT NULL,
+        gender VARCHAR(12) NOT NULL DEFAULT '',
+        birth_date VARCHAR(10) NULL,
+        email VARCHAR(160) NOT NULL DEFAULT '',
+        phone VARCHAR(30) NOT NULL DEFAULT '',
+        phone2 VARCHAR(30) NOT NULL DEFAULT '',
+        role VARCHAR(80) NOT NULL DEFAULT '',
+        rg VARCHAR(20) NOT NULL DEFAULT '',
+        cpf VARCHAR(14) NOT NULL DEFAULT '',
+        signs_contract INT NOT NULL DEFAULT 0,
+        guarantor INT NOT NULL DEFAULT 0,
+        active INT NOT NULL DEFAULT 1,
+        is_primary INT NOT NULL DEFAULT 0,
+        legacy_id VARCHAR(20) NULL,
+        created_at VARCHAR(19) NOT NULL
+      )${tail()}`,
+      `CREATE INDEX idx_client_people_user ON client_people (user_id)`,
+    ],
+  },
 ];
 
 export async function migrate() {

@@ -305,6 +305,27 @@ export interface Birthday {
   email_sent: boolean;
 }
 
+/** Pessoa ligada a um cliente: o titular, sócios ou responsáveis. */
+export interface ClientPerson {
+  id: number;
+  user_id: number;
+  name: string;
+  gender: '' | 'Masculino' | 'Feminino';
+  birth_date: string;
+  email: string;
+  phone: string;
+  phone2: string;
+  role: string;
+  rg: string;
+  cpf: string;
+  signs_contract: boolean;
+  guarantor: boolean;
+  active: boolean;
+  /** Pessoa principal do cliente: os dados de contato dela vão para o cadastro. */
+  is_primary: boolean;
+  legacy_id: string;
+}
+
 export interface EmailTemplateValues {
   subject: string;
   title: string;
