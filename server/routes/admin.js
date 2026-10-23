@@ -39,6 +39,7 @@ import { birthDateField } from '../utils/birthDate.js';
 import { isPlaceholderEmail, placeholderEmail, shownEmail } from '../utils/email.js';
 import { MAX_ROWS_PER_REQUEST, importClients } from '../services/clientImport.js';
 import { createPerson, createPrimaryPerson, listPeople, registrationPerson, personSchema, presentPerson, updatePerson } from '../services/clientPeople.js';
+import { passwordField } from '../utils/password.js';
 import { MAX_GUEST_ROWS, importGuests, listGuests } from '../services/clientGuests.js';
 import { MAX_BOOKING_ROWS, importBookings } from '../services/bookingImport.js';
 import { monthStatement, presentRoom } from './app.js';
@@ -395,7 +396,7 @@ const userInput = z.object({
   name: z.string().trim().min(2, 'Informe o nome').max(120),
   // Vazio = cliente sem e-mail (fica com um endereço reservado, que nunca recebe mensagem).
   email: z.union([z.literal(''), z.string().trim().toLowerCase().email('E-mail inválido').max(160)]).optional().default(''),
-  password: z.string().min(8, 'A senha precisa ter ao menos 8 caracteres').max(100).optional().or(z.literal('')),
+  password: passwordField.optional().or(z.literal('')),
   // Acesso ao painel: `profile_id` escolhe o perfil (null = cliente, sem painel). `role: 'admin'` sem perfil = Administrador.
   role: z.enum(['client', 'admin']).optional(),
   profile_id: z.coerce.number().int().positive().nullable().optional(),

@@ -1,10 +1,11 @@
 import { useState, type FormEvent } from 'react';
 import { Button } from '../../components/ui/Button';
-import { Input } from '../../components/ui/Form';
+import { Input, PasswordInput } from '../../components/ui/Form';
 import { useToast } from '../../components/ui/Feedback';
 import { Avatar, Card, CardHeader, PageHeader } from '../../components/ui/Misc';
 import { useAuth } from '../../contexts/AuthContext';
 import { todayStr } from '../../lib/format';
+import { passwordError } from '../../lib/password';
 import { api } from '../../services/api';
 import type { User } from '../../types';
 
@@ -34,6 +35,8 @@ export default function Profile() {
   const changePassword = async (e: FormEvent) => {
     e.preventDefault();
     setPwError('');
+    const invalid = passwordError(pw.new_password);
+    if (invalid) return setPwError(invalid);
     setPwSaving(true);
     try {
       await api.put('/auth/password', pw);
@@ -74,8 +77,8 @@ export default function Profile() {
           <CardHeader title="Alterar senha" />
           <form onSubmit={changePassword} className="flex flex-col gap-4">
             {pwError && <div role="alert" className="rounded-xl border border-rose/25 bg-rose-dim px-4 py-3 text-[13px] text-rose">{pwError}</div>}
-            <Input label="Senha atual" type="password" autoComplete="current-password" required value={pw.current_password} onChange={(e) => setPw({ ...pw, current_password: e.target.value })} />
-            <Input label="Nova senha" type="password" autoComplete="new-password" required minLength={8} hint="Mínimo de 8 caracteres" value={pw.new_password} onChange={(e) => setPw({ ...pw, new_password: e.target.value })} />
+            <PasswordInput label="Senha atual" autoComplete="current-password" required value={pw.current_password} onChange={(e) => setPw({ ...pw, current_password: e.target.value })} />
+            <PasswordInput label="Nova senha" autoComplete="new-password" required showRules value={pw.new_password} onChange={(e) => setPw({ ...pw, new_password: e.target.value })} />
             <Button type="submit" variant="secondary" loading={pwSaving}>Atualizar senha</Button>
           </form>
         </Card>

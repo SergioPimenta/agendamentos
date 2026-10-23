@@ -13,12 +13,13 @@ import { HttpError, asyncHandler, parse, rateLimit } from '../utils/http.js';
 import { sendTemplated } from '../services/emailTemplates.js';
 import { birthDateField } from '../utils/birthDate.js';
 import { isPlaceholderEmail } from '../utils/email.js';
+import { passwordField } from '../utils/password.js';
 import { addMinutesAt, nowLocal, nowStamp } from '../utils/time.js';
 
 const router = express.Router();
 
 const email = z.string().trim().toLowerCase().email('E-mail inválido').max(160);
-const password = z.string().min(8, 'A senha precisa ter ao menos 8 caracteres').max(100);
+const password = passwordField;
 
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, key: (req) => String(req.body?.email || '').toLowerCase() });
 

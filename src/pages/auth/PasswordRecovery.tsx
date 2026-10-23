@@ -2,8 +2,9 @@ import { useState, type FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { MailCheck } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
-import { Input } from '../../components/ui/Form';
+import { Input, PasswordInput } from '../../components/ui/Form';
 import { useToast } from '../../components/ui/Feedback';
+import { passwordError } from '../../lib/password';
 import { api } from '../../services/api';
 import { AuthLayout } from './AuthLayout';
 
@@ -67,7 +68,8 @@ export function ResetPassword() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
-    if (password.length < 8) return setError('A senha precisa ter ao menos 8 caracteres.');
+    const pwError = passwordError(password);
+    if (pwError) return setError(pwError);
     setLoading(true);
     try {
       await api.post('/auth/reset-password', { token, password });
@@ -81,10 +83,10 @@ export function ResetPassword() {
   };
 
   return (
-    <AuthLayout title="Crie uma nova senha" subtitle="Escolha uma senha com pelo menos 8 caracteres." footer={backLink}>
+    <AuthLayout title="Crie uma nova senha" subtitle="Escolha uma senha com pelo menos 8 caracteres, uma letra e um número." footer={backLink}>
       <form onSubmit={submit} className="flex flex-col gap-5" noValidate>
         {error && <div role="alert" className="rounded-xl border border-rose/25 bg-rose-dim px-4 py-3 text-[13.5px] text-rose">{error}</div>}
-        <Input label="Nova senha" type="password" required autoFocus autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        <PasswordInput label="Nova senha" required autoFocus autoComplete="new-password" showRules value={password} onChange={(e) => setPassword(e.target.value)} />
         <Button type="submit" size="lg" loading={loading} disabled={!token} className="w-full">Salvar nova senha</Button>
       </form>
     </AuthLayout>

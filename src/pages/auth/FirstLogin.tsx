@@ -1,8 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../../components/ui/Button';
-import { Input } from '../../components/ui/Form';
+import { Input, PasswordInput } from '../../components/ui/Form';
 import { useAuth } from '../../contexts/AuthContext';
+import { passwordError } from '../../lib/password';
 import { api } from '../../services/api';
 import type { User } from '../../types';
 import { AuthLayout } from './AuthLayout';
@@ -71,7 +72,8 @@ export default function FirstLogin() {
 
   const savePassword = (e: FormEvent) => {
     e.preventDefault();
-    if (password.length < 8) return setError('A senha precisa ter ao menos 8 caracteres.');
+    const pwError = passwordError(password);
+    if (pwError) return setError(pwError);
     if (password !== confirm) return setError('As senhas não conferem.');
     return run(async () => {
       await api.post('/auth/first-login/password', { password });
@@ -86,8 +88,8 @@ export default function FirstLogin() {
       <AuthLayout title="Crie sua senha" subtitle="Você já está dentro. Defina uma senha para entrar nas próximas vezes com e-mail e senha.">
         <form onSubmit={savePassword} className="flex flex-col gap-5" noValidate>
           {error && <Alert>{error}</Alert>}
-          <Input label="Nova senha" type="password" required autoComplete="new-password" autoFocus hint="Mínimo de 8 caracteres" value={password} onChange={(e) => setPassword(e.target.value)} />
-          <Input label="Repita a senha" type="password" required autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+          <PasswordInput label="Nova senha" required autoComplete="new-password" autoFocus showRules value={password} onChange={(e) => setPassword(e.target.value)} />
+          <PasswordInput label="Repita a senha" required autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
           <Button type="submit" size="lg" loading={loading} className="w-full">Salvar e continuar</Button>
         </form>
       </AuthLayout>

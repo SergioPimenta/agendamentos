@@ -1,6 +1,7 @@
-import { useId, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react';
-import { Search } from 'lucide-react';
+import { useId, useState, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react';
+import { Check, Circle, Eye, EyeOff, Search } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { PASSWORD_RULES } from '../../lib/password';
 
 export const inputClass =
   'w-full rounded-xl border border-ink/12 bg-cream px-4 py-3 text-[14px] text-ink outline-none transition-all duration-200 placeholder:text-stone-light hover:border-ink/25 focus:border-sage-700 focus:ring-4 focus:ring-sage/20 disabled:cursor-not-allowed disabled:bg-sand-deep/60 disabled:text-stone';
@@ -40,6 +41,58 @@ export function Input({ label, hint, error, required, className, containerClassN
   return (
     <Field label={label} hint={hint} error={error} required={required} className={containerClassName}>
       {(id) => <input id={id} required={required} className={cn(inputClass, error && 'border-rose', className)} {...rest} />}
+    </Field>
+  );
+}
+
+/**
+ * Campo de senha com o "olhinho" para mostrar/ocultar. Com `showRules` (campos de senha NOVA), mostra a lista de regras
+ * e marca cada uma conforme a pessoa digita.
+ */
+export function PasswordInput({
+  label, hint, error, required, className, containerClassName, showRules, value, ...rest
+}: Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> & FieldExtras & { containerClassName?: string; showRules?: boolean }) {
+  const [show, setShow] = useState(false);
+  const text = String(value ?? '');
+  return (
+    <Field label={label} hint={showRules ? undefined : hint} error={error} required={required} className={containerClassName}>
+      {(id) => (
+        <>
+          <div className="relative">
+            <input
+              id={id}
+              type={show ? 'text' : 'password'}
+              required={required}
+              value={value}
+              className={cn(inputClass, 'pr-12', error && 'border-rose', className)}
+              {...rest}
+            />
+            <button
+              type="button"
+              onClick={() => setShow((v) => !v)}
+              aria-label={show ? 'Ocultar senha' : 'Mostrar senha'}
+              aria-pressed={show}
+              className="absolute top-1/2 right-3 -translate-y-1/2 cursor-pointer rounded-full p-1.5 text-stone transition-colors hover:text-ink focus-visible:ring-2 focus-visible:ring-sage/40 focus-visible:outline-none"
+            >
+              {show ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+          </div>
+          {showRules && (
+            <ul className="mt-0.5 flex flex-col gap-1" aria-label="Regras da senha">
+              {PASSWORD_RULES.map((r) => {
+                const ok = r.test(text);
+                return (
+                  <li key={r.id} className={cn('flex items-center gap-2 text-[12px] transition-colors', ok ? 'text-sage-700' : 'text-stone-light')}>
+                    {ok ? <Check size={13} aria-hidden /> : <Circle size={13} aria-hidden />}
+                    <span>{r.label}</span>
+                    <span className="sr-only">{ok ? '(cumprida)' : '(pendente)'}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </>
+      )}
     </Field>
   );
 }

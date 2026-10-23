@@ -1,8 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { ArrowRight, Eye, EyeOff } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
-import { Input } from '../../components/ui/Form';
+import { Input, PasswordInput } from '../../components/ui/Form';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../services/api';
 import type { User } from '../../types';
@@ -16,7 +16,6 @@ export default function Login() {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [show, setShow] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -60,17 +59,7 @@ export default function Login() {
         )}
         <Input label="E-mail" type="email" required autoComplete="email" autoFocus placeholder="voce@email.com" value={email} onChange={(e) => setEmail(e.target.value)} />
         <div className="flex flex-col gap-1.5">
-          <div className="relative">
-            <Input label="Senha" type={show ? 'text' : 'password'} required autoComplete="current-password" placeholder="Sua senha" value={password} onChange={(e) => setPassword(e.target.value)} className="pr-12" />
-            <button
-              type="button"
-              onClick={() => setShow((v) => !v)}
-              aria-label={show ? 'Ocultar senha' : 'Mostrar senha'}
-              className="absolute right-3 bottom-[11px] rounded-full p-1.5 text-stone hover:text-ink"
-            >
-              {show ? <EyeOff size={18} /> : <Eye size={18} />}
-            </button>
-          </div>
+          <PasswordInput label="Senha" required autoComplete="current-password" placeholder="Sua senha" value={password} onChange={(e) => setPassword(e.target.value)} />
           <Link to="/esqueci-senha" className="self-end text-[12.5px] font-medium text-stone no-underline hover:text-sage-700">
             Esqueceu sua senha?
           </Link>

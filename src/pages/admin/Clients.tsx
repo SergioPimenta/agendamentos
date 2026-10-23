@@ -4,7 +4,7 @@ import { BookingDetail } from '../../components/booking/BookingDetail';
 import { BookingRow } from '../../components/booking/BookingRow';
 import { Button } from '../../components/ui/Button';
 import { Badge, EmptyState, ErrorState, Skeleton, useConfirm, useToast } from '../../components/ui/Feedback';
-import { Input, Select, SearchInput, Switch, Textarea } from '../../components/ui/Form';
+import { Input, PasswordInput, Select, SearchInput, Switch, Textarea } from '../../components/ui/Form';
 import { Modal } from '../../components/ui/Modal';
 import { Avatar, DataTable, PageHeader, Td, Th } from '../../components/ui/Misc';
 import { useAuth } from '../../contexts/AuthContext';
@@ -216,7 +216,7 @@ function ClientForm({ open, client, plans, profiles, onClose, onSaved, onDelete 
         {error && <div role="alert" className="rounded-xl border border-rose/25 bg-rose-dim px-4 py-3 text-[13px] text-rose sm:col-span-2">{error}</div>}
         <Input containerClassName="sm:col-span-2" label="Nome completo" required value={f.name} onChange={set('name')} />
         <Input label="E-mail" type="email" value={f.email} onChange={set('email')} hint={client && !client.has_email ? 'Sem e-mail: informe um para o cliente poder entrar e receber mensagens.' : client ? undefined : 'Pode ficar em branco: o cliente não entra sozinho, a recepção reserva por ele.'} />
-        <Input label={client ? 'Nova senha' : 'Senha inicial'} type="password" autoComplete="new-password" required={!client && !!f.email} minLength={8} hint={client ? 'Deixe em branco para manter' : 'Obrigatória com e-mail; mínimo de 8 caracteres'} value={f.password} onChange={set('password')} />
+        <PasswordInput label={client ? 'Nova senha' : 'Senha inicial'} autoComplete="new-password" required={!client && !!f.email} showRules={!!f.password} hint={client ? 'Deixe em branco para manter' : 'Obrigatória com e-mail: 8+ caracteres, uma letra e um número'} value={f.password} onChange={set('password')} />
         <Input label="Telefone / WhatsApp" value={f.phone} onChange={set('phone')} />
         <Input label="Nome fantasia / empresa / profissão" value={f.company} onChange={set('company')} />
         <Input label="CPF / CNPJ" value={f.document} onChange={set('document')} />

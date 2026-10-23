@@ -1,9 +1,10 @@
 import { useState, type FormEvent } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../../components/ui/Button';
-import { Input, Select } from '../../components/ui/Form';
+import { Input, PasswordInput, Select } from '../../components/ui/Form';
 import { useAuth } from '../../contexts/AuthContext';
 import { todayStr } from '../../lib/format';
+import { passwordError } from '../../lib/password';
 import { api } from '../../services/api';
 import type { User } from '../../types';
 import { AuthLayout } from './AuthLayout';
@@ -53,7 +54,8 @@ export default function Signup() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
-    if (form.password.length < 8) return setError('A senha precisa ter ao menos 8 caracteres.');
+    const pwError = passwordError(form.password);
+    if (pwError) return setError(pwError);
     setLoading(true);
     try {
       const body = {
@@ -147,7 +149,7 @@ export default function Signup() {
 
         <Section title="Acesso ao sistema">
           <Input label="E-mail" type="email" required autoComplete="email" value={form.email} onChange={set('email')} />
-          <Input label="Senha" type="password" required autoComplete="new-password" hint="Mínimo de 8 caracteres" value={form.password} onChange={set('password')} />
+          <PasswordInput label="Senha" required autoComplete="new-password" showRules value={form.password} onChange={set('password')} />
         </Section>
 
         <Button type="submit" size="lg" loading={loading} className="w-full">Criar conta</Button>

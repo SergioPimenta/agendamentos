@@ -38,6 +38,25 @@ async function lastCode() {
   return m ? m.html.match(/\b(\d{6})\b/)[1] : null;
 }
 
+describe('regras das senhas novas', () => {
+  it('exige 8+ caracteres, uma letra e um número no cadastro, na redefinição e na senha criada pela administração', async () => {
+    for (const [pw, msg] of [['abc1', /ao menos 8/], ['12345678', /uma letra/], ['somenteletras', /um número/]]) {
+      const r = await call('POST', '/auth/register', { body: { name: 'Senha Fraca', email: `fraca-${pw}@exemplo.com`, password: pw } });
+      assert.equal(r.status, 400);
+      assert.match(JSON.stringify(r.body), msg);
+    }
+    assert.equal((await call('POST', '/auth/register', { body: { name: 'Senha Boa', email: 'boa-senha@exemplo.com', password: 'abcdefg1' } })).status, 201);
+
+    const admin = (await call('POST', '/auth/login', { body: { email: 'admin@harmonizeoser.com.br', password: 'senha-admin-123' } })).body.token;
+    assert.equal((await call('POST', '/admin/users', { token: admin, body: { name: 'Adm Fraca', email: 'adm-fraca@exemplo.com', password: 'semnumeroaqui' } })).status, 400);
+    assert.equal((await call('POST', '/admin/users', { token: admin, body: { name: 'Adm Boa', email: 'adm-boa@exemplo.com', password: 'com-numero-9' } })).status, 201);
+
+    // quem já tem senha antiga (sem número) continua entrando: o login não aplica as regras novas
+    await db.run('UPDATE users SET password = ? WHERE email = ?', [(await import('bcryptjs')).default.hashSync('senhaantiga', 4), 'adm-boa@exemplo.com']);
+    assert.equal((await call('POST', '/auth/login', { body: { email: 'adm-boa@exemplo.com', password: 'senhaantiga' } })).status, 200);
+  });
+});
+
 describe('primeiro acesso por código', () => {
   it('cliente importado entra com o código do e-mail, define a senha e depois usa e-mail e senha', async () => {
     const admin = (await call('POST', '/auth/login', { body: { email: 'admin@harmonizeoser.com.br', password: 'senha-admin-123' } })).body.token;
