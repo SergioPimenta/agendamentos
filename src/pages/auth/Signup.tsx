@@ -3,6 +3,7 @@ import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../../components/ui/Button';
 import { Input, PasswordInput, Select } from '../../components/ui/Form';
 import { useAuth } from '../../contexts/AuthContext';
+import { ACTIVITY_AREAS, areaValue, detailMax } from '../../lib/activityAreas';
 import { todayStr } from '../../lib/format';
 import { passwordError } from '../../lib/password';
 import { api } from '../../services/api';
@@ -16,7 +17,7 @@ const blank = {
   name: '', company: '', document: '', phone: '', city: '', state: '',
   email: '', password: '',
   // Pessoa física: é a própria pessoa. Empresa: o responsável.
-  p_name: '', p_gender: '', p_birth: '', p_cpf: '', p_rg: '', p_role: '', p_email: '', p_phone: '', p_phone2: '',
+  p_name: '', p_gender: '', p_birth: '', p_cpf: '', p_rg: '', p_role: '', p_area: '', p_area_detail: '', p_email: '', p_phone: '', p_phone2: '',
 };
 
 const Section = ({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) => (
@@ -42,6 +43,7 @@ export default function Signup() {
 
   const set = (k: keyof typeof blank) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const company = form.kind === 'company';
+  const area = ACTIVITY_AREAS.find((a) => a.label === form.p_area);
 
   if (settings && !settings.allow_signup) {
     return (
@@ -56,6 +58,7 @@ export default function Signup() {
     setError('');
     const pwError = passwordError(form.password);
     if (pwError) return setError(pwError);
+    if (!company && area?.ask && !form.p_area_detail.trim()) return setError(`Especifique ${area.ask} da sua área de atuação.`);
     setLoading(true);
     try {
       const body = {
@@ -74,7 +77,7 @@ export default function Signup() {
           birth_date: form.p_birth,
           cpf: company ? form.p_cpf : form.document,
           rg: form.p_rg,
-          role: form.p_role,
+          role: company ? form.p_role : areaValue(form.p_area, form.p_area_detail),
           email: company ? form.p_email : form.email,
           phone: company ? form.p_phone : form.phone,
           phone2: form.p_phone2,
@@ -102,7 +105,27 @@ export default function Signup() {
         <Input label="Data de nascimento" type="date" min="1900-01-01" max={todayStr()} autoComplete="bday" value={form.p_birth} onChange={set('p_birth')} />
         {company && <Input label="CPF do responsável" inputMode="numeric" maxLength={14} value={form.p_cpf} onChange={set('p_cpf')} />}
         <Input label="RG" maxLength={20} value={form.p_rg} onChange={set('p_rg')} />
-        <Input label={company ? 'Cargo / função' : 'Profissão'} maxLength={80} value={form.p_role} onChange={set('p_role')} />
+        {company ? (
+          <Input label="Cargo / função" maxLength={80} value={form.p_role} onChange={set('p_role')} />
+        ) : (
+          <>
+            <Select label="Área de atuação" value={form.p_area} onChange={(e) => setForm((f) => ({ ...f, p_area: e.target.value, p_area_detail: '' }))}>
+              <option value="">Selecione…</option>
+              {ACTIVITY_AREAS.map((a) => <option key={a.label} value={a.label}>{a.label}</option>)}
+            </Select>
+            {area?.ask && (
+              <Input
+                containerClassName="sm:col-span-2"
+                label={`Especifique ${area.ask}`}
+                required
+                autoFocus
+                maxLength={detailMax(area)}
+                value={form.p_area_detail}
+                onChange={set('p_area_detail')}
+              />
+            )}
+          </>
+        )}
         {company && <Input label="E-mail do responsável" type="email" autoComplete="email" hint="Se for diferente do e-mail de acesso." value={form.p_email} onChange={set('p_email')} />}
         {company && <Input label="Telefone do responsável" type="tel" placeholder="(41) 99999-9999" value={form.p_phone} onChange={set('p_phone')} />}
         <Input label="Outro telefone" type="tel" value={form.p_phone2} onChange={set('p_phone2')} />
