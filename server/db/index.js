@@ -90,7 +90,20 @@ async function createMysql() {
 
   return {
     dialect: 'mysql',
-    withLock: (fn) => fn(),
+    // Vários processos podem subir juntos: só um por vez cria/atualiza as tabelas (trava do próprio MySQL, até 2 min).
+    withLock: async (fn) => {
+      const c = await pool.getConnection();
+      try {
+        await c.query("SELECT GET_LOCK('harmonize_migrate', 120)");
+        return await fn();
+      } finally {
+        try {
+          await c.query("SELECT RELEASE_LOCK('harmonize_migrate')");
+        } finally {
+          c.release();
+        }
+      }
+    },
     ...bind(pool),
     forUpdate: (sql) => sql,
     transaction: async (fn) => {

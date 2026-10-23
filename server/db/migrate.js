@@ -491,6 +491,19 @@ const migrations = [
   },
 ];
 
+/**
+ * No MySQL, ALTER TABLE/CREATE INDEX não voltam atrás se a migração falha no meio (o banco confirma cada um na hora).
+ * Se a migração foi interrompida e roda de novo, a coluna ou o índice já existem: isso não pode derrubar o servidor.
+ */
+async function execTolerant(tx, sql) {
+  try {
+    await tx.exec(sql);
+  } catch (err) {
+    if (!/duplicate column name|duplicate key name|already exists/i.test(String(err?.message))) throw err;
+    console.warn(`[db] já existia, seguindo: ${String(err.message).slice(0, 90)}`);
+  }
+}
+
 export async function migrate() {
   await db.exec(
     `CREATE TABLE IF NOT EXISTS schema_migrations (id VARCHAR(60) NOT NULL PRIMARY KEY, applied_at VARCHAR(19) NOT NULL)${tail()}`,
@@ -499,7 +512,7 @@ export async function migrate() {
   for (const m of migrations) {
     if (done.has(m.id)) continue;
     await db.transaction(async (tx) => {
-      for (const stmt of m.statements()) await (typeof stmt === 'function' ? stmt(tx) : tx.exec(stmt));
+      for (const stmt of m.statements()) await (typeof stmt === 'function' ? stmt(tx) : execTolerant(tx, stmt));
       await tx.run('INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)', [m.id, nowStamp()]);
     });
     console.log(`[db] migração aplicada: ${m.id}`);
