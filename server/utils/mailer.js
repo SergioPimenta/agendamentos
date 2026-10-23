@@ -31,7 +31,7 @@ export function emailTemplate({ title, intro, rows = [], cta, footer = '' }) {
     : '';
   return `<!doctype html><html><body style="margin:0;background:#f7f4ec;padding:28px 12px;font-family:Manrope,Segoe UI,Arial,sans-serif">
   <div style="max-width:520px;margin:0 auto;background:#fffdf7;border-radius:22px;padding:34px;border:1px solid #e7e2d3">
-    <div style="font-family:Georgia,serif;font-size:21px;color:#262a22;margin-bottom:22px">harmonize<span style="color:#566b4f">oser</span></div>
+    <div style="margin-bottom:22px"><img src="${config.appUrl}/assets/email-logo.png" width="112" alt="harmonizeoser" style="display:block;width:112px;height:auto;border:0;border-radius:14px;font-family:Georgia,serif;font-size:21px;color:#262a22"></div>
     <h1 style="font-family:Georgia,serif;font-weight:500;font-size:24px;color:#262a22;margin:0 0 10px">${escapeHtml(title)}</h1>
     <p style="color:#6c6f62;font-size:14.5px;line-height:1.7;margin:0">${intro}</p>
     ${details}${button}
