@@ -32,6 +32,7 @@ const AdminHourBank = lazy(() => import('./pages/admin/HourBank'));
 const AdminPackages = lazy(() => import('./pages/admin/Packages'));
 const AdminBirthdays = lazy(() => import('./pages/admin/Birthdays'));
 const AdminGuests = lazy(() => import('./pages/admin/Guests'));
+const AdminContracts = lazy(() => import('./pages/admin/Contracts'));
 const AdminProfiles = lazy(() => import('./pages/admin/Profiles'));
 const AdminRooms = lazy(() => import('./pages/admin/Rooms'));
 const AdminPlans = lazy(() => import('./pages/admin/Plans'));
@@ -144,6 +145,7 @@ export default function App() {
               <Route element={<RequireModule module="bookings" />}><Route path="reservas" element={<AdminBookings />} /></Route>
               <Route path="clientes" element={<ClientsLayout />}>
                 <Route element={<RequireModule module="clients" />}><Route index element={<AdminClients />} /></Route>
+                <Route element={<RequireModule module="clients" />}><Route path="contratos" element={<AdminContracts />} /></Route>
                 <Route element={<RequireModule module="clients" />}><Route path="convidados" element={<AdminGuests />} /></Route>
                 <Route element={<RequireModule module="profiles" />}><Route path="perfis" element={<AdminProfiles />} /></Route>
               </Route>

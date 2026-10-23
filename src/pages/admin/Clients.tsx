@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { CalendarPlus, Mail, MapPin, Pencil, Phone, Plus, Trash2, Upload, Users } from 'lucide-react';
 import { BookingDetail } from '../../components/booking/BookingDetail';
 import { BookingRow } from '../../components/booking/BookingRow';
@@ -12,8 +13,9 @@ import { useApi, useDebounced } from '../../hooks/useApi';
 import { fmtDateFull, fmtDuration, fmtMoney, fmtMonth, todayStr } from '../../lib/format';
 import { api } from '../../services/api';
 import { PeopleSection } from './ClientPeople';
+import { contractBadge } from '../../components/contracts/ContractBadge';
 import { ImportClientsModal } from './ImportClients';
-import type { AccessProfile, Booking, Client, ClientPerson, Plan, Statement } from '../../types';
+import type { AccessProfile, Booking, Client, ClientPerson, Contract, Plan, Statement } from '../../types';
 
 const PER_PAGE = 25;
 const emptyPerson = { name: '', gender: '', birth_date: '', cpf: '', rg: '', role: '', email: '', phone2: '', signs_contract: true };
@@ -277,6 +279,7 @@ function ClientForm({ open, client, plans, profiles, onClose, onSaved, onDelete 
 interface Detail {
   user: Client;
   people: ClientPerson[];
+  contracts: Contract[];
   statement: Statement;
   history: Booking[];
   lifetime: { bookings: number; minutes: number; amount_cents: number; pending_cents: number };
@@ -332,6 +335,31 @@ function ClientDetail({ id, onClose, onEdit, onChanged }: { id: number | null; o
             )}
 
             <PeopleSection userId={d.user.id} people={d.people} canEdit={canEdit} onChanged={() => { q.reload(); onChanged(); }} />
+
+            <div>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h3 className="font-display text-[17px] font-medium text-ink">Contratos</h3>
+                <Link to="/admin/clientes/contratos" onClick={onClose} className="text-[12.5px] font-semibold text-sage-700 no-underline hover:underline">Ver todos os contratos</Link>
+              </div>
+              {d.contracts.length === 0 ? (
+                <p className="text-[13.5px] text-stone">Nenhum contrato cadastrado para este cliente.</p>
+              ) : (
+                <ul className="flex flex-col gap-3">
+                  {d.contracts.map((c) => (
+                    <li key={c.id} className="rounded-2xl border border-ink/8 bg-cream px-4 py-3.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-medium text-ink">{c.kind} <span className="font-normal text-stone">· {c.period}</span></p>
+                        {contractBadge(c.status)}
+                      </div>
+                      <p className="mt-1.5 text-[12.5px] text-stone">
+                        {fmtMoney(c.amount_cents)}{c.due_day ? ` · vence dia ${c.due_day}` : ''} · desde {fmtDateFull(c.start_date)}{c.end_date ? ` até ${fmtDateFull(c.end_date)}` : ''}
+                        {c.fidelity_until ? ` · fidelidade até ${fmtDateFull(c.fidelity_until)}` : ''}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
 
             <div className="grid gap-3 sm:grid-cols-3">
               {[

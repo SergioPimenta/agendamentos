@@ -42,6 +42,7 @@ import { createPerson, createPrimaryPerson, listPeople, registrationPerson, pers
 import { passwordField } from '../utils/password.js';
 import { MAX_GUEST_ROWS, importGuests, listGuests } from '../services/clientGuests.js';
 import { MAX_BOOKING_ROWS, importBookings } from '../services/bookingImport.js';
+import { MAX_CONTRACT_ROWS, contractSchema, contractsOf, createContract, getContract, importContracts, listContracts, presentContract, updateContract } from '../services/contracts.js';
 import { monthStatement, presentRoom } from './app.js';
 
 const router = express.Router();
@@ -56,6 +57,7 @@ router.use('/packages', requireModule(['packages']));
 router.use('/hour-bank', requireModule(['hour_bank']));
 router.use('/people', requireModule(['clients']));
 router.use('/guests', requireModule(['clients']));
+router.use('/contracts', requireModule(['clients']));
 router.use('/rooms', requireModule(['rooms'], ['agenda', 'bookings', 'packages']));
 router.use('/upload', requireModule(['rooms']));
 router.use('/plans', requireModule(['plans'], ['clients', 'finance']));
@@ -530,6 +532,70 @@ router.post(
   }),
 );
 
+/* ---------------- contratos dos clientes (cadastro) ---------------- */
+
+router.get(
+  '/contracts',
+  asyncHandler(async (req, res) => {
+    const q = parse(
+      z.object({
+        q: z.string().trim().max(80).optional(),
+        status: z.enum(['active', 'ending', 'fidelity', 'closed']).optional(),
+        kind: z.string().trim().max(80).optional(),
+        page: z.coerce.number().int().min(1).optional().default(1),
+        per_page: z.coerce.number().int().min(1).max(100).optional().default(25),
+      }),
+      req.query,
+    );
+    const { contracts, total, kinds } = await listContracts({ q: q.q, status: q.status, kind: q.kind, page: q.page, perPage: q.per_page });
+    res.json({ contracts, total, kinds, page: q.page, per_page: q.per_page });
+  }),
+);
+
+router.post(
+  '/contracts/import',
+  asyncHandler(async (req, res) => {
+    const { rows, dry_run } = parse(
+      z.object({
+        rows: z.array(z.record(z.string(), z.any())).min(1, 'Nenhum contrato para importar').max(MAX_CONTRACT_ROWS, `Envie até ${MAX_CONTRACT_ROWS} contratos por vez`),
+        dry_run: z.boolean().optional().default(false),
+      }),
+      req.body,
+    );
+    res.json(await importContracts({ rows, dryRun: dry_run }));
+  }),
+);
+
+router.post(
+  '/contracts',
+  asyncHandler(async (req, res) => {
+    const { user_id, ...rest } = req.body ?? {};
+    const userId = parse(id, user_id);
+    const d = parse(contractSchema, rest);
+    const cid = await createContract(userId, d);
+    res.status(201).json({ contract: presentContract(await getContract(cid)) });
+  }),
+);
+
+router.put(
+  '/contracts/:id',
+  asyncHandler(async (req, res) => {
+    const cid = Number(req.params.id);
+    const d = parse(contractSchema, req.body);
+    if (!(await updateContract(cid, d))) throw new HttpError(404, 'Contrato não encontrado.');
+    res.json({ contract: presentContract(await getContract(cid)) });
+  }),
+);
+
+router.delete(
+  '/contracts/:id',
+  asyncHandler(async (req, res) => {
+    const r = await db.run('DELETE FROM contracts WHERE id = ?', [Number(req.params.id)]);
+    if (!r.changes) throw new HttpError(404, 'Contrato não encontrado.');
+    res.json({ ok: true });
+  }),
+);
+
 /* ---------------- convidados dos clientes ---------------- */
 
 router.get(
@@ -591,6 +657,7 @@ router.get(
     res.json({
       user: presentUser(u),
       people: await listPeople(uid),
+      contracts: await contractsOf(uid),
       statement: await monthStatement(uid, month, rules, req.user.id),
       history: history.map((r) => serializeBooking(r, { rules, now, isAdmin: true })),
       lifetime: { bookings: Number(life.bookings), minutes: Number(life.minutes), amount_cents: Number(life.amount), pending_cents: Number(life.pending) },

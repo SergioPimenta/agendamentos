@@ -499,6 +499,36 @@ const migrations = [
     id: '026_user_avatar',
     statements: () => [`ALTER TABLE users ADD COLUMN avatar VARCHAR(255) NULL`],
   },
+  {
+    // Contratos dos clientes (cadastro: tipo, período, valor, vencimento, fidelidade e reajuste).
+    id: '027_contracts',
+    statements: () => [
+      `CREATE TABLE IF NOT EXISTS contracts (
+        id ${pk()},
+        user_id INT NOT NULL,
+        kind VARCHAR(80) NOT NULL,
+        unit VARCHAR(80) NOT NULL DEFAULT '',
+        period VARCHAR(12) NOT NULL DEFAULT 'Mensal',
+        signed_at VARCHAR(10) NULL,
+        start_date VARCHAR(10) NOT NULL,
+        end_date VARCHAR(10) NULL,
+        fidelity_until VARCHAR(10) NULL,
+        amount_cents INT NOT NULL DEFAULT 0,
+        due_day INT NULL,
+        private_office VARCHAR(80) NOT NULL DEFAULT '',
+        created_by_name VARCHAR(120) NOT NULL DEFAULT '',
+        last_adjustment VARCHAR(10) NULL,
+        adjustment_index VARCHAR(20) NOT NULL DEFAULT '',
+        active INT NOT NULL DEFAULT 1,
+        notes TEXT NULL,
+        legacy_key VARCHAR(120) NULL,
+        created_at VARCHAR(19) NOT NULL,
+        updated_at VARCHAR(19) NOT NULL
+      )${tail()}`,
+      `CREATE INDEX idx_contracts_user ON contracts (user_id)`,
+      `CREATE INDEX idx_contracts_legacy ON contracts (legacy_key)`,
+    ],
+  },
 ];
 
 /**

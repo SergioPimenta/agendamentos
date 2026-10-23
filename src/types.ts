@@ -265,6 +265,33 @@ export interface Statement {
 
 export interface Guest { name: string; email: string }
 
+export type ContractStatus = 'active' | 'ending' | 'ended' | 'inactive';
+
+/** Contrato de um cliente (cadastro: tipo, período, valor, vencimento, fidelidade e reajuste). */
+export interface Contract {
+  id: number;
+  user_id: number;
+  client_name: string;
+  client_code: string;
+  kind: string;
+  unit: string;
+  period: string;
+  signed_at: string;
+  start_date: string;
+  end_date: string;
+  fidelity_until: string;
+  amount_cents: number;
+  due_day: number | null;
+  private_office: string;
+  created_by_name: string;
+  last_adjustment: string;
+  adjustment_index: string;
+  active: boolean;
+  notes: string;
+  status: ContractStatus;
+  created_at: string;
+}
+
 /** Convidado na seção Convidados dos clientes (importado do sistema anterior ou gravado a cada reserva). */
 export interface ClientGuest {
   id: number;
