@@ -5,6 +5,7 @@ import { Input, PasswordInput, Select } from '../../components/ui/Form';
 import { useAuth } from '../../contexts/AuthContext';
 import { ACTIVITY_AREAS, areaValue, detailMax } from '../../lib/activityAreas';
 import { todayStr } from '../../lib/format';
+import { maskCnpj, maskCpf, maskPhone, maskRg, maskUf, onlyDigits } from '../../lib/masks';
 import { passwordError } from '../../lib/password';
 import { api } from '../../services/api';
 import type { User } from '../../types';
@@ -43,6 +44,7 @@ export default function Signup() {
 
   const set = (k: keyof typeof blank) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const company = form.kind === 'company';
+  const setMask = (k: keyof typeof blank, fn: (v: string) => string) => (e: React.ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, [k]: fn(e.target.value) }));
   const area = ACTIVITY_AREAS.find((a) => a.label === form.p_area);
 
   if (settings && !settings.allow_signup) {
@@ -68,14 +70,14 @@ export default function Signup() {
         password: form.password,
         phone: form.phone,
         company: form.company,
-        document: form.document,
+        document: onlyDigits(form.document),
         city: form.city,
         state: form.state,
         person: {
           name: company ? form.p_name : form.name,
           gender: form.p_gender,
           birth_date: form.p_birth,
-          cpf: company ? form.p_cpf : form.document,
+          cpf: onlyDigits(company ? form.p_cpf : form.document),
           rg: form.p_rg,
           role: company ? form.p_role : areaValue(form.p_area, form.p_area_detail),
           email: company ? form.p_email : form.email,
@@ -103,14 +105,14 @@ export default function Signup() {
           <option value="Masculino">Masculino</option>
         </Select>
         <Input label="Data de nascimento" type="date" min="1900-01-01" max={todayStr()} autoComplete="bday" value={form.p_birth} onChange={set('p_birth')} />
-        {company && <Input label="CPF do responsável" inputMode="numeric" maxLength={14} value={form.p_cpf} onChange={set('p_cpf')} />}
-        <Input label="RG" maxLength={20} value={form.p_rg} onChange={set('p_rg')} />
+        {company && <Input label="CPF do responsável" inputMode="numeric" maxLength={14} placeholder="000.000.000-00" value={form.p_cpf} onChange={setMask('p_cpf', maskCpf)} />}
+        <Input label="RG" maxLength={20} placeholder="00.000.000-0" value={form.p_rg} onChange={setMask('p_rg', maskRg)} />
         {company ? (
-          <Input label="Cargo / função" maxLength={80} value={form.p_role} onChange={set('p_role')} />
+          <Input label="Cargo / função" maxLength={80} placeholder="Ex.: Sócia, Diretor, Gerente" value={form.p_role} onChange={set('p_role')} />
         ) : (
           <>
             <Select label="Área de atuação" value={form.p_area} onChange={(e) => setForm((f) => ({ ...f, p_area: e.target.value, p_area_detail: '' }))}>
-              <option value="">Selecione…</option>
+              <option value="">Selecione sua área…</option>
               {ACTIVITY_AREAS.map((a) => <option key={a.label} value={a.label}>{a.label}</option>)}
             </Select>
             {area?.ask && (
@@ -120,15 +122,16 @@ export default function Signup() {
                 required
                 autoFocus
                 maxLength={detailMax(area)}
+                placeholder="Descreva em poucas palavras"
                 value={form.p_area_detail}
                 onChange={set('p_area_detail')}
               />
             )}
           </>
         )}
-        {company && <Input label="E-mail do responsável" type="email" autoComplete="email" hint="Se for diferente do e-mail de acesso." value={form.p_email} onChange={set('p_email')} />}
-        {company && <Input label="Telefone do responsável" type="tel" placeholder="(41) 99999-9999" value={form.p_phone} onChange={set('p_phone')} />}
-        <Input label="Outro telefone" type="tel" value={form.p_phone2} onChange={set('p_phone2')} />
+        {company && <Input label="E-mail do responsável" type="email" autoComplete="email" placeholder="responsavel@empresa.com.br" hint="Se for diferente do e-mail de acesso." value={form.p_email} onChange={set('p_email')} />}
+        {company && <Input label="Telefone do responsável" type="tel" inputMode="tel" maxLength={15} placeholder="(41) 99999-9999" value={form.p_phone} onChange={setMask('p_phone', maskPhone)} />}
+        <Input label="Outro telefone" type="tel" inputMode="tel" maxLength={15} placeholder="(41) 3333-3333" value={form.p_phone2} onChange={setMask('p_phone2', maskPhone)} />
       </div>
     </>
   );
@@ -143,27 +146,27 @@ export default function Signup() {
         {error && <div role="alert" className="rounded-xl border border-rose/25 bg-rose-dim px-4 py-3 text-[13.5px] text-rose">{error}</div>}
 
         <Section title="Tipo de cadastro">
-          <Select label="Você vai reservar como" value={form.kind} onChange={set('kind')}>
+          <Select label="Você vai reservar como" value={form.kind} onChange={(e) => setForm((f) => ({ ...f, kind: e.target.value as Kind, document: '' }))}>
             <option value="individual">Pessoa física</option>
             <option value="company">Empresa (CNPJ)</option>
           </Select>
         </Section>
 
         <Section title={company ? 'Dados da empresa' : 'Seus dados'}>
-          <Input label={company ? 'Razão social' : 'Nome completo'} required autoComplete={company ? 'organization' : 'name'} autoFocus value={form.name} onChange={set('name')} />
-          {company && <Input label="Nome fantasia" value={form.company} onChange={set('company')} />}
+          <Input label={company ? 'Razão social' : 'Nome completo'} required autoComplete={company ? 'organization' : 'name'} autoFocus placeholder={company ? 'Nome da empresa Ltda' : 'Maria da Silva'} value={form.name} onChange={set('name')} />
+          {company && <Input label="Nome fantasia" placeholder="Como a empresa é conhecida" value={form.company} onChange={set('company')} />}
           <div className="grid gap-4 sm:grid-cols-2">
-            <Input label={company ? 'CNPJ' : 'CPF'} required inputMode="numeric" maxLength={company ? 18 : 14} placeholder={company ? '00.000.000/0000-00' : '000.000.000-00'} value={form.document} onChange={set('document')} />
-            <Input label={company ? 'Telefone da empresa' : 'Telefone / WhatsApp'} type="tel" required autoComplete="tel" placeholder="(41) 99999-9999" value={form.phone} onChange={set('phone')} />
-            <Input label="Cidade" autoComplete="address-level2" maxLength={80} value={form.city} onChange={set('city')} />
-            <Input label="UF" autoComplete="address-level1" maxLength={2} placeholder="PR" value={form.state} onChange={set('state')} />
+            <Input label={company ? 'CNPJ' : 'CPF'} required inputMode="numeric" maxLength={company ? 18 : 14} placeholder={company ? '00.000.000/0000-00' : '000.000.000-00'} value={form.document} onChange={setMask('document', company ? maskCnpj : maskCpf)} />
+            <Input label={company ? 'Telefone da empresa' : 'Telefone / WhatsApp'} type="tel" required autoComplete="tel" inputMode="tel" maxLength={15} placeholder="(41) 99999-9999" value={form.phone} onChange={setMask('phone', maskPhone)} />
+            <Input label="Cidade" autoComplete="address-level2" maxLength={80} placeholder="Curitiba" value={form.city} onChange={set('city')} />
+            <Input label="UF" autoComplete="address-level1" maxLength={2} placeholder="PR" value={form.state} onChange={setMask('state', maskUf)} />
           </div>
-          {!company && <Input label="Nome do seu negócio" hint="Opcional. Empresa, consultório, estúdio…" value={form.company} onChange={set('company')} />}
+          {!company && <Input label="Nome do seu negócio" placeholder="Ex.: Studio Bem-Estar" hint="Opcional. Empresa, consultório, estúdio…" value={form.company} onChange={set('company')} />}
         </Section>
 
         {company ? (
           <Section title="Responsável pela empresa" hint="Quem assina o contrato e fala pela empresa.">
-            <Input label="Nome do responsável" required autoComplete="name" value={form.p_name} onChange={set('p_name')} />
+            <Input label="Nome do responsável" required autoComplete="name" placeholder="Nome completo do responsável" value={form.p_name} onChange={set('p_name')} />
             {personFields}
           </Section>
         ) : (
@@ -171,8 +174,8 @@ export default function Signup() {
         )}
 
         <Section title="Acesso ao sistema">
-          <Input label="E-mail" type="email" required autoComplete="email" value={form.email} onChange={set('email')} />
-          <PasswordInput label="Senha" required autoComplete="new-password" showRules value={form.password} onChange={set('password')} />
+          <Input label="E-mail" type="email" required autoComplete="email" placeholder="voce@email.com" value={form.email} onChange={set('email')} />
+          <PasswordInput label="Senha" required autoComplete="new-password" placeholder="Crie uma senha" showRules value={form.password} onChange={set('password')} />
         </Section>
 
         <Button type="submit" size="lg" loading={loading} className="w-full">Criar conta</Button>
