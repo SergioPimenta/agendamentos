@@ -415,6 +415,7 @@ const userInput = z.object({
 const presentUser = (u) => ({
   id: Number(u.id),
   name: u.name,
+  avatar: u.avatar ?? '',
   email: shownEmail(u.email),
   has_email: !isPlaceholderEmail(u.email),
   legacy_code: u.legacy_code ?? '',

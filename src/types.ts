@@ -74,6 +74,8 @@ export interface User {
   profile_name?: string | null;
   permissions: Permissions;
   birth_date?: string;
+  /** Foto de perfil (endereço da imagem); vazio = sem foto. */
+  avatar?: string;
   phone: string;
   document: string;
   company: string;
@@ -285,6 +287,8 @@ export interface ClientGuest {
 export interface Client {
   id: number;
   name: string;
+  /** Foto de perfil (endereço da imagem); vazio = sem foto. */
+  avatar?: string;
   email: string;
   role: Role;
   profile_id: number | null;

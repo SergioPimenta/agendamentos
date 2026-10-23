@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { cn } from '../../lib/cn';
 import { initials } from '../../lib/format';
 
@@ -77,14 +77,17 @@ export function Segmented<T extends string>({
   );
 }
 
-export function Avatar({ name, size = 36, className }: { name: string; size?: number; className?: string }) {
+/** Círculo com a foto da pessoa; sem foto (ou se ela não carregar), mostra as iniciais. */
+export function Avatar({ name, src, size = 36, className }: { name: string; src?: string; size?: number; className?: string }) {
+  const [failed, setFailed] = useState<string | null>(null);
+  const showPhoto = Boolean(src) && failed !== src;
   return (
     <span
-      className={cn('inline-flex shrink-0 items-center justify-center rounded-full bg-sage-700 font-display font-medium text-cream', className)}
+      className={cn('inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-sage-700 font-display font-medium text-cream', className)}
       style={{ width: size, height: size, fontSize: size * 0.38 }}
       aria-hidden
     >
-      {initials(name)}
+      {showPhoto ? <img src={src} alt="" loading="lazy" className="h-full w-full object-cover" onError={() => setFailed(src ?? null)} /> : initials(name)}
     </span>
   );
 }

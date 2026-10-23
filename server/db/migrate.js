@@ -494,6 +494,11 @@ const migrations = [
       `ALTER TABLE users ADD COLUMN first_login_until VARCHAR(19) NULL`,
     ],
   },
+  {
+    // Foto de perfil do cliente (caminho do arquivo em /uploads).
+    id: '026_user_avatar',
+    statements: () => [`ALTER TABLE users ADD COLUMN avatar VARCHAR(255) NULL`],
+  },
 ];
 
 /**

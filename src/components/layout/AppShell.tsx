@@ -110,7 +110,7 @@ export function AppShell({ variant }: { variant: 'client' | 'admin' }) {
         )}
         <InstallAppButton variant="outline-light" className="mb-3 w-full" />
         <div className="flex items-center gap-3 rounded-2xl bg-cream/8 p-3">
-          <Avatar name={user?.name ?? ''} size={38} className="bg-sage-light text-sage-900" />
+          <Avatar name={user?.name ?? ''} src={user?.avatar} size={38} className="bg-sage-light text-sage-900" />
           <div className="min-w-0 flex-1">
             <p className="truncate text-[13px] font-semibold text-cream">{user?.name}</p>
             <p className="truncate text-[11.5px] text-cream/55">{user?.plan?.name ?? (user?.role === 'admin' ? (user.profile_name ?? 'Administrador') : user?.email)}</p>

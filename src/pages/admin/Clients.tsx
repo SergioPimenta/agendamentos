@@ -80,7 +80,7 @@ export default function AdminClients() {
                 <tr key={c.id} onClick={() => setDetailId(c.id)} className="cursor-pointer transition-colors hover:bg-sage-dim/50">
                   <Td className="px-3">
                     <div className="flex items-center gap-2.5">
-                      <Avatar name={c.name} size={34} />
+                      <Avatar name={c.name} src={c.avatar} size={34} />
                       <div className="min-w-0">
                         <p className="font-medium break-words">{c.name} {c.role === 'admin' && <Badge tone="ink" className="ml-1">{c.profile_name ?? 'admin'}</Badge>}</p>
                         <p className="text-[12px] break-words text-stone">{c.company || (c.has_email ? c.email : c.city)}</p>

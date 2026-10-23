@@ -1,6 +1,9 @@
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import express from 'express';
+import fs from 'fs';
+import multer from 'multer';
+import path from 'path';
 import { z } from 'zod';
 import { config } from '../config.js';
 import { db } from '../db/index.js';
@@ -18,6 +21,24 @@ import { addMinutesAt, nowLocal, nowStamp } from '../utils/time.js';
 
 const router = express.Router();
 
+/* ---------------- foto de perfil ---------------- */
+const AVATAR_TYPES = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp' };
+fs.mkdirSync(config.uploadsDir, { recursive: true });
+const avatarUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, config.uploadsDir),
+    filename: (req, file, cb) => cb(null, `perfil-${req.user.id}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${AVATAR_TYPES[file.mimetype]}`),
+  }),
+  limits: { fileSize: 3 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, cb) => (AVATAR_TYPES[file.mimetype] ? cb(null, true) : cb(new HttpError(400, 'Envie uma imagem JPG, PNG ou WebP.'))),
+});
+
+/** Apaga do disco a foto antiga (só arquivos de perfil dentro da pasta de envios). */
+const removeAvatarFile = (url) => {
+  if (!url || !String(url).startsWith('/uploads/perfil-')) return;
+  fs.promises.unlink(path.join(config.uploadsDir, path.basename(url))).catch(() => {});
+};
+
 const email = z.string().trim().toLowerCase().email('E-mail inválido').max(160);
 const password = passwordField;
 
@@ -27,7 +48,7 @@ export async function publicUser(id) {
   const u = await db.get(
     `SELECT u.id, u.name, u.email, u.role, u.phone, u.document, u.company, u.plan_id, p.name AS plan_name,
             p.included_minutes AS plan_included_minutes, p.unlimited AS plan_unlimited,
-            u.birth_date, ap.name AS profile_name, ap.permissions AS profile_permissions, ap.is_system AS profile_is_system
+            u.birth_date, u.avatar, ap.name AS profile_name, ap.permissions AS profile_permissions, ap.is_system AS profile_is_system
        FROM users u LEFT JOIN plans p ON p.id = u.plan_id LEFT JOIN access_profiles ap ON ap.id = u.profile_id WHERE u.id = ?`,
     [id],
   );
@@ -39,6 +60,7 @@ export async function publicUser(id) {
     profile_name: u.role === 'admin' ? (u.profile_name ?? 'Administrador') : null,
     permissions: permissionsFor(u),
     birth_date: u.birth_date ?? '',
+    avatar: u.avatar ?? '',
     phone: u.phone,
     document: u.document,
     company: u.company,
@@ -146,6 +168,30 @@ router.put(
       data.name, data.phone, data.company, data.document, nowStamp(), req.user.id,
     ]);
     if (data.birth_date !== undefined) await db.run('UPDATE users SET birth_date = ? WHERE id = ?', [data.birth_date, req.user.id]);
+    res.json({ user: await publicUser(req.user.id) });
+  }),
+);
+
+router.post(
+  '/me/avatar',
+  verifyToken,
+  avatarUpload.single('file'),
+  asyncHandler(async (req, res) => {
+    if (!req.file) throw new HttpError(400, 'Nenhum arquivo enviado.');
+    const prev = (await db.get('SELECT avatar FROM users WHERE id = ?', [req.user.id]))?.avatar;
+    await db.run('UPDATE users SET avatar = ?, updated_at = ? WHERE id = ?', [`/uploads/${req.file.filename}`, nowStamp(), req.user.id]);
+    removeAvatarFile(prev);
+    res.status(201).json({ user: await publicUser(req.user.id) });
+  }),
+);
+
+router.delete(
+  '/me/avatar',
+  verifyToken,
+  asyncHandler(async (req, res) => {
+    const prev = (await db.get('SELECT avatar FROM users WHERE id = ?', [req.user.id]))?.avatar;
+    await db.run('UPDATE users SET avatar = NULL, updated_at = ? WHERE id = ?', [nowStamp(), req.user.id]);
+    removeAvatarFile(prev);
     res.json({ user: await publicUser(req.user.id) });
   }),
 );

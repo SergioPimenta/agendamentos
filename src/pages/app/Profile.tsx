@@ -1,10 +1,12 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
+import { Camera, Trash2 } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Input, PasswordInput } from '../../components/ui/Form';
 import { useToast } from '../../components/ui/Feedback';
 import { Avatar, Card, CardHeader, PageHeader } from '../../components/ui/Misc';
 import { useAuth } from '../../contexts/AuthContext';
 import { todayStr } from '../../lib/format';
+import { squarePhoto } from '../../lib/image';
 import { passwordError } from '../../lib/password';
 import { api } from '../../services/api';
 import type { User } from '../../types';
@@ -17,6 +19,8 @@ export default function Profile() {
   const [pw, setPw] = useState({ current_password: '', new_password: '' });
   const [pwSaving, setPwSaving] = useState(false);
   const [pwError, setPwError] = useState('');
+  const photoInput = useRef<HTMLInputElement>(null);
+  const [photoBusy, setPhotoBusy] = useState<'send' | 'remove' | null>(null);
 
   const save = async (e: FormEvent) => {
     e.preventDefault();
@@ -29,6 +33,34 @@ export default function Profile() {
       toast.error(err instanceof Error ? err.message : 'Não foi possível salvar.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const sendPhoto = async (picked: File | undefined) => {
+    if (photoInput.current) photoInput.current.value = '';
+    if (!picked) return;
+    setPhotoBusy('send');
+    try {
+      const res = await api.upload<{ user: User }>('/auth/me/avatar', await squarePhoto(picked));
+      setUser(res.user);
+      toast.success('Foto de perfil atualizada.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Não foi possível enviar a foto.');
+    } finally {
+      setPhotoBusy(null);
+    }
+  };
+
+  const removePhoto = async () => {
+    setPhotoBusy('remove');
+    try {
+      const res = await api.delete<{ user: User }>('/auth/me/avatar');
+      setUser(res.user);
+      toast.success('Foto removida.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Não foi possível remover a foto.');
+    } finally {
+      setPhotoBusy(null);
     }
   };
 
@@ -55,11 +87,21 @@ export default function Profile() {
 
       <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
         <Card>
-          <div className="mb-6 flex items-center gap-4">
-            <Avatar name={user?.name ?? ''} size={60} />
-            <div>
+          <div className="mb-6 flex flex-wrap items-center gap-x-5 gap-y-4">
+            <Avatar name={user?.name ?? ''} src={user?.avatar} size={84} />
+            <div className="min-w-0 flex-1">
               <p className="font-display text-[20px] font-medium text-ink">{user?.name}</p>
               <p className="text-[13px] text-stone">{user?.email}{user?.plan ? ` · Plano ${user.plan.name}` : ''}</p>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <input ref={photoInput} type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" aria-label="Escolher foto de perfil" onChange={(e) => sendPhoto(e.target.files?.[0])} />
+                <Button type="button" variant="secondary" size="sm" icon={<Camera size={15} />} loading={photoBusy === 'send'} disabled={photoBusy !== null} onClick={() => photoInput.current?.click()}>
+                  {user?.avatar ? 'Trocar foto' : 'Enviar foto'}
+                </Button>
+                {user?.avatar && (
+                  <Button type="button" variant="ghost" size="sm" icon={<Trash2 size={15} />} loading={photoBusy === 'remove'} disabled={photoBusy !== null} onClick={removePhoto}>Remover</Button>
+                )}
+              </div>
+              <p className="mt-2 text-[12px] text-stone-light">JPG, PNG ou WebP. A foto é recortada em quadrado automaticamente.</p>
             </div>
           </div>
           <form onSubmit={save} className="grid gap-4 sm:grid-cols-2">
