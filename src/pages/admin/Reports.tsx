@@ -46,7 +46,46 @@ const roomColor = (index: number) => ROOM_COLORS[index % ROOM_COLORS.length];
 
 interface Slice { key: string; name: string; color: string; minutes: number }
 const sumOf = (slices: Slice[]) => slices.reduce((a, s) => a + s.minutes, 0);
-const stackTitle = (head: string, slices: Slice[]) => [head, ...slices.map((s) => `${s.name}: ${fmtDuration(s.minutes)}`)].join('\n');
+
+/** Dados do balão que aparece ao passar o mouse (ou focar com o teclado) numa barra. */
+interface Tip { x: number; y: number; title: string; sub: string; slices: Slice[] }
+
+/** Balão com as salas da barra: cor, horas e a parte de cada uma. Segue o mouse e nunca sai da tela. */
+function ChartTip({ tip }: { tip: Tip | null }) {
+  if (!tip) return null;
+  const width = 264;
+  const sorted = [...tip.slices].sort((a, b) => b.minutes - a.minutes);
+  const total = sumOf(sorted) || 1;
+  const height = 78 + Math.max(1, sorted.length) * 36;
+  let left = tip.x + 18;
+  if (left + width > window.innerWidth - 8) left = tip.x - width - 18;
+  left = Math.max(8, left);
+  const top = Math.min(Math.max(8, tip.y - height / 2), window.innerHeight - height - 8);
+  return (
+    <div
+      role="tooltip"
+      className="pointer-events-none fixed z-50 rounded-2xl border border-ink/8 bg-cream p-4 shadow-[0_22px_48px_-14px_rgba(44,54,39,0.42)]"
+      style={{ left, top, width }}
+    >
+      <p className="font-display text-[16px] leading-tight font-medium text-ink">{tip.title}</p>
+      <p className="mt-0.5 text-[12px] text-stone">{tip.sub}</p>
+      <ul className="mt-3 flex flex-col gap-2.5 border-t border-ink/8 pt-3">
+        {sorted.length === 0 && <li className="text-[12.5px] text-stone-light">Sem reservas</li>}
+        {sorted.map((s) => (
+          <li key={s.key}>
+            <div className="flex items-center gap-2 text-[12.5px]">
+              <span className="h-2.5 w-2.5 shrink-0 rounded-[4px]" style={{ background: s.color }} aria-hidden />
+              <span className="min-w-0 flex-1 truncate font-medium text-ink">{s.name}</span>
+              <span className="shrink-0 font-semibold text-ink">{fmtDuration(s.minutes)}</span>
+              <span className="w-9 shrink-0 text-right text-stone-light">{pct(s.minutes / total)}</span>
+            </div>
+            <div className="mt-1 h-1 overflow-hidden rounded-full bg-sand"><div className="h-full rounded-full" style={{ width: `${(s.minutes / total) * 100}%`, background: s.color }} /></div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 /** Barra dividida por sala: a primeira sala fica embaixo; a altura total vem de `heightPct`. */
 function StackedBar({ segments, heightPct, className }: { segments: Slice[]; heightPct: number; className?: string }) {
@@ -66,6 +105,18 @@ export default function AdminReports() {
   const [preset, setPreset] = useState<Preset>('month');
   const [custom, setCustom] = useState(range('month'));
   const [openRoom, setOpenRoom] = useState<number | null>(null);
+  const [tip, setTip] = useState<Tip | null>(null);
+  /** Propriedades que ligam o balão a uma barra: mouse e teclado (Tab). */
+  const tipProps = (title: string, sub: string, slices: Slice[]) => ({
+    tabIndex: 0,
+    onMouseMove: (e: React.MouseEvent) => setTip({ x: e.clientX, y: e.clientY, title, sub, slices }),
+    onMouseLeave: () => setTip(null),
+    onFocus: (e: React.FocusEvent<HTMLElement>) => {
+      const b = e.currentTarget.getBoundingClientRect();
+      setTip({ x: b.left + b.width / 2, y: b.top + b.height / 2, title, sub, slices });
+    },
+    onBlur: () => setTip(null),
+  });
   const { from, to } = preset === 'custom' ? custom : range(preset);
   const q = useApi(() => api.get<Report>('/admin/reports', { from, to }), [from, to]);
   const r = q.data;
@@ -102,6 +153,8 @@ export default function AdminReports() {
 
       {q.error && <ErrorState message={q.error} onRetry={q.refetch} />}
 
+      <ChartTip tip={tip} />
+
       {!r ? <Skeleton className="h-[400px] rounded-[22px]" /> : (
         <div className={cn('flex flex-col gap-6 transition-opacity', q.loading && 'opacity-60')}>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-5 lg:gap-4">
@@ -115,11 +168,15 @@ export default function AdminReports() {
           <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-2">
             <Card>
               <CardHeader title="Por dia da semana" subtitle="Horas reservadas" />
-              <div className="flex h-[180px] items-end gap-3">
+              <div className="group/chart flex h-[180px] items-end gap-3">
                 {r.by_weekday.map((w) => {
                   const stack = stackFor(w.minutes, (room) => room.by_weekday.find((d) => d.weekday === w.weekday)?.minutes ?? 0);
                   return (
-                    <div key={w.weekday} className="flex h-full flex-1 flex-col items-center justify-end gap-2" title={stackTitle(`${WEEKDAYS[w.weekday]} · ${fmtDuration(w.minutes)} · ${w.bookings} reservas`, stack)}>
+                    <div
+                      key={w.weekday}
+                      className="flex h-full flex-1 cursor-default flex-col items-center justify-end gap-2 rounded-lg outline-none transition-opacity group-hover/chart:opacity-45 hover:opacity-100! focus-visible:ring-2 focus-visible:ring-sage/40"
+                      {...tipProps(WEEKDAYS[w.weekday], `${fmtDuration(w.minutes)} · ${w.bookings} reserva${w.bookings === 1 ? '' : 's'}`, stack)}
+                    >
                       <span className="text-[11px] font-semibold text-stone">{w.minutes ? fmtHours(w.minutes) : ''}</span>
                       <div className="flex w-full flex-1 items-end"><StackedBar segments={stack} heightPct={Math.max(3, (Math.max(w.minutes, sumOf(stack)) / maxWeekday) * 100)} className="rounded-t-[10px]" /></div>
                       <span className="text-[11px] font-medium text-stone-light">{WEEKDAYS[w.weekday].slice(0, 3)}</span>
@@ -131,11 +188,16 @@ export default function AdminReports() {
 
             <Card>
               <CardHeader title="Por horário" subtitle="Onde está a demanda ao longo do dia" />
-              <div className="flex h-[180px] items-end gap-1.5">
+              <div className="group/chart flex h-[180px] items-end gap-1.5">
                 {r.by_hour.map((h) => {
                   const stack = stackFor(h.minutes, (room) => room.by_hour.find((x) => x.hour === h.hour)?.minutes ?? 0);
+                  const count = r.by_room.reduce((a, room) => a + (room.by_hour.find((x) => x.hour === h.hour)?.bookings ?? 0), 0);
                   return (
-                    <div key={h.hour} className="flex h-full flex-1 flex-col items-center justify-end gap-2" title={stackTitle(`${h.hour}h · ${fmtDuration(h.minutes)}`, stack)}>
+                    <div
+                      key={h.hour}
+                      className="flex h-full flex-1 cursor-default flex-col items-center justify-end gap-2 rounded-md outline-none transition-opacity group-hover/chart:opacity-45 hover:opacity-100! focus-visible:ring-2 focus-visible:ring-sage/40"
+                      {...tipProps(`${h.hour}h às ${h.hour + 1}h`, `${fmtDuration(h.minutes)} · ${count} reserva${count === 1 ? '' : 's'}`, stack)}
+                    >
                       <div className="flex w-full flex-1 items-end"><StackedBar segments={stack} heightPct={Math.max(3, (Math.max(h.minutes, sumOf(stack)) / maxHour) * 100)} className="rounded-t-md" /></div>
                       <span className="text-[10.5px] text-stone-light">{h.hour}</span>
                     </div>
