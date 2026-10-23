@@ -39,6 +39,28 @@ function range(preset: Preset): { from: string; to: string } {
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 
+/** Cores das salas (na ordem da lista). Distintas entre si e no tom do sistema. */
+const ROOM_COLORS = ['#566b4f', '#c2703d', '#d9a441', '#5b8fa8', '#9a5b7a', '#7aa874', '#b5524d', '#8f7ac2', '#3f8f8b', '#a68a64', '#4d5f8a', '#c9a0a0'];
+const OTHER_COLOR = '#b9b7ab';
+const roomColor = (index: number) => ROOM_COLORS[index % ROOM_COLORS.length];
+
+interface Slice { key: string; name: string; color: string; minutes: number }
+const sumOf = (slices: Slice[]) => slices.reduce((a, s) => a + s.minutes, 0);
+const stackTitle = (head: string, slices: Slice[]) => [head, ...slices.map((s) => `${s.name}: ${fmtDuration(s.minutes)}`)].join('\n');
+
+/** Barra dividida por sala: a primeira sala fica embaixo; a altura total vem de `heightPct`. */
+function StackedBar({ segments, heightPct, className }: { segments: Slice[]; heightPct: number; className?: string }) {
+  const total = sumOf(segments) || 1;
+  return (
+    <div className={cn('flex w-full flex-col-reverse overflow-hidden', className)} style={{ height: `${heightPct}%` }}>
+      {segments.length === 0 && <div className="h-full w-full bg-sage-dim" />}
+      {segments.map((s) => (
+        <div key={s.key} style={{ height: `${(s.minutes / total) * 100}%`, minHeight: 2, background: s.color, boxShadow: 'inset 0 1px 0 rgba(255,253,247,0.45)' }} />
+      ))}
+    </div>
+  );
+}
+
 export default function AdminReports() {
   const toast = useToast();
   const [preset, setPreset] = useState<Preset>('month');
@@ -48,8 +70,16 @@ export default function AdminReports() {
   const q = useApi(() => api.get<Report>('/admin/reports', { from, to }), [from, to]);
   const r = q.data;
 
-  const maxWeekday = Math.max(1, ...(r?.by_weekday.map((w) => w.minutes) ?? [1]));
-  const maxHour = Math.max(1, ...(r?.by_hour.map((h) => h.minutes) ?? [1]));
+  // Cada sala tem a sua cor, a mesma nos gráficos e na lista "Desempenho por sala".
+  const colorOf = (roomId: number) => roomColor(Math.max(0, r?.by_room.findIndex((x) => x.id === roomId) ?? 0));
+  /** Fatias de uma barra: minutos de cada sala; o que sobra (salas desativadas) vira "Outras". */
+  const stackFor = (total: number, pick: (room: RoomReport) => number): Slice[] => {
+    const parts: Slice[] = (r?.by_room ?? []).map((room) => ({ key: String(room.id), name: room.name, color: colorOf(room.id), minutes: pick(room) })).filter((s) => s.minutes > 0);
+    const rest = total - sumOf(parts);
+    return rest > 0 ? [...parts, { key: 'rest', name: 'Outras salas', color: OTHER_COLOR, minutes: rest }] : parts;
+  };
+  const maxWeekday = Math.max(1, ...(r?.by_weekday.flatMap((w) => [w.minutes, sumOf(stackFor(w.minutes, (room) => room.by_weekday.find((d) => d.weekday === w.weekday)?.minutes ?? 0))]) ?? [1]));
+  const maxHour = Math.max(1, ...(r?.by_hour.flatMap((h) => [h.minutes, sumOf(stackFor(h.minutes, (room) => room.by_hour.find((x) => x.hour === h.hour)?.minutes ?? 0))]) ?? [1]));
 
   return (
     <>
@@ -86,32 +116,38 @@ export default function AdminReports() {
             <Card>
               <CardHeader title="Por dia da semana" subtitle="Horas reservadas" />
               <div className="flex h-[180px] items-end gap-3">
-                {r.by_weekday.map((w) => (
-                  <div key={w.weekday} className="flex h-full flex-1 flex-col items-center justify-end gap-2" title={`${WEEKDAYS[w.weekday]} · ${fmtDuration(w.minutes)} · ${w.bookings} reservas`}>
-                    <span className="text-[11px] font-semibold text-stone">{w.minutes ? fmtHours(w.minutes) : ''}</span>
-                    <div className="flex w-full flex-1 items-end"><div className="w-full rounded-t-[10px] bg-sage-700" style={{ height: `${Math.max(3, (w.minutes / maxWeekday) * 100)}%` }} /></div>
-                    <span className="text-[11px] font-medium text-stone-light">{WEEKDAYS[w.weekday].slice(0, 3)}</span>
-                  </div>
-                ))}
+                {r.by_weekday.map((w) => {
+                  const stack = stackFor(w.minutes, (room) => room.by_weekday.find((d) => d.weekday === w.weekday)?.minutes ?? 0);
+                  return (
+                    <div key={w.weekday} className="flex h-full flex-1 flex-col items-center justify-end gap-2" title={stackTitle(`${WEEKDAYS[w.weekday]} · ${fmtDuration(w.minutes)} · ${w.bookings} reservas`, stack)}>
+                      <span className="text-[11px] font-semibold text-stone">{w.minutes ? fmtHours(w.minutes) : ''}</span>
+                      <div className="flex w-full flex-1 items-end"><StackedBar segments={stack} heightPct={Math.max(3, (Math.max(w.minutes, sumOf(stack)) / maxWeekday) * 100)} className="rounded-t-[10px]" /></div>
+                      <span className="text-[11px] font-medium text-stone-light">{WEEKDAYS[w.weekday].slice(0, 3)}</span>
+                    </div>
+                  );
+                })}
               </div>
             </Card>
 
             <Card>
               <CardHeader title="Por horário" subtitle="Onde está a demanda ao longo do dia" />
               <div className="flex h-[180px] items-end gap-1.5">
-                {r.by_hour.map((h) => (
-                  <div key={h.hour} className="flex h-full flex-1 flex-col items-center justify-end gap-2" title={`${h.hour}h · ${fmtDuration(h.minutes)}`}>
-                    <div className="flex w-full flex-1 items-end"><div className="w-full rounded-t-md bg-sage" style={{ height: `${Math.max(3, (h.minutes / maxHour) * 100)}%`, opacity: 0.35 + 0.65 * (h.minutes / maxHour) }} /></div>
-                    <span className="text-[10.5px] text-stone-light">{h.hour}</span>
-                  </div>
-                ))}
+                {r.by_hour.map((h) => {
+                  const stack = stackFor(h.minutes, (room) => room.by_hour.find((x) => x.hour === h.hour)?.minutes ?? 0);
+                  return (
+                    <div key={h.hour} className="flex h-full flex-1 flex-col items-center justify-end gap-2" title={stackTitle(`${h.hour}h · ${fmtDuration(h.minutes)}`, stack)}>
+                      <div className="flex w-full flex-1 items-end"><StackedBar segments={stack} heightPct={Math.max(3, (Math.max(h.minutes, sumOf(stack)) / maxHour) * 100)} className="rounded-t-md" /></div>
+                      <span className="text-[10.5px] text-stone-light">{h.hour}</span>
+                    </div>
+                  );
+                })}
               </div>
             </Card>
           </div>
 
           <div>
             <h2 className="font-display text-[19px] font-medium text-ink">Desempenho por sala</h2>
-            <p className="mt-1 mb-3 text-[13px] text-stone">Clique em uma sala para ver em que horários e dias ela mais enche (e quando fica vazia).</p>
+            <p className="mt-1 mb-3 text-[13px] text-stone">Cada sala tem uma cor, a mesma das barras dos gráficos acima. Clique em uma sala para ver em que horários e dias ela mais enche (e quando fica vazia).</p>
             <DataTable>
               <thead>
                 <tr>
@@ -129,6 +165,7 @@ export default function AdminReports() {
                         <Td className="font-medium">
                           <button type="button" aria-expanded={open} className="flex cursor-pointer items-center gap-2 text-left">
                             <ChevronDown size={16} className={cn('shrink-0 text-stone transition-transform', open && 'rotate-180 text-sage-700')} />
+                            <span className="h-3.5 w-3.5 shrink-0 rounded-[5px]" style={{ background: colorOf(room.id) }} aria-hidden />
                             {room.name}
                           </button>
                         </Td>
