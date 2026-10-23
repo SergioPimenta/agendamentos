@@ -80,10 +80,17 @@ export async function createApp() {
         // Arquivos com hash no nome (js/css do build) nunca mudam: o navegador guarda por um ano.
         setHeaders: (res, file) => {
           if (/-[\w-]{8}\.(js|css)$/.test(file)) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+          if (file.endsWith('sw.js')) res.setHeader('Cache-Control', 'no-cache'); // o app instalável precisa achar versões novas
         },
       }),
     );
-    app.get('*', (_req, res) => res.sendFile(path.join(config.distDir, 'index.html')));
+    app.get('*', (req, res) => {
+      // Arquivo que não existe (ex.: um .js antigo depois de uma atualização) é 404 de verdade. Devolver a página inicial
+      // no lugar faria o navegador tentar rodar HTML como script e a tela ficar em branco.
+      if (path.extname(req.path)) return res.status(404).type('text/plain').send('Arquivo não encontrado.');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.sendFile(path.join(config.distDir, 'index.html'));
+    });
   }
 
   app.use(errorHandler);

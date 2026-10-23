@@ -20,6 +20,22 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   </React.StrictMode>,
 );
 
+// Depois de uma atualização do sistema, uma aba aberta ainda aponta para arquivos antigos que não existem mais.
+// Em vez de ficar em branco, recarrega uma vez para pegar a versão nova.
+window.addEventListener('vite:preloadError', (event) => {
+  event.preventDefault();
+  try {
+    if (sessionStorage.getItem('chunk-reload')) return;
+    sessionStorage.setItem('chunk-reload', '1');
+  } catch {
+    /* sem sessionStorage: recarrega mesmo assim */
+  }
+  window.location.reload();
+});
+window.addEventListener('load', () => {
+  try { sessionStorage.removeItem('chunk-reload'); } catch { /* ignora */ }
+});
+
 // App instalável (PWA): o service worker só vale em produção (em dev atrapalharia o hot reload).
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {

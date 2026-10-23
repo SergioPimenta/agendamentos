@@ -1,6 +1,6 @@
 /* Service worker do app instalável. Só acelera arquivos estáticos e mostra uma tela offline;
    chamadas da API e uploads nunca passam pelo cache (reservas e pagamentos precisam de dados atuais). */
-const VERSION = 'v1';
+const VERSION = 'v2'; // v2: descarta caches que guardaram a página inicial no lugar de um arquivo que sumiu
 const STATIC = `static-${VERSION}`;
 const SHELL = `shell-${VERSION}`;
 
@@ -35,7 +35,10 @@ self.addEventListener('fetch', (event) => {
       caches.open(STATIC).then(async (cache) => {
         const cached = await cache.match(req);
         const fresh = fetch(req).then((res) => {
-          if (res.ok) cache.put(req, res.clone());
+          // Só guarda arquivo de verdade: se o servidor devolveu uma página HTML no lugar (arquivo removido
+          // por uma atualização), isso não pode ficar no cache, senão a tela fica em branco para sempre.
+          const type = res.headers.get('content-type') || '';
+          if (res.ok && !type.includes('text/html')) cache.put(req, res.clone());
           return res;
         }).catch(() => cached);
         return cached || fresh;
