@@ -472,6 +472,10 @@ export interface HourPackage {
   room_ids: number[];
   /** Nomes das salas acima (vazio = todas as salas). */
   rooms: string[];
+  /** Clientes para quem o pacote aparece (ids); lista vazia = todos os clientes. */
+  client_ids: number[];
+  /** Os mesmos clientes, com nome (só na administração). */
+  clients: { id: number; name: string }[];
   /** Quantas vezes já foi vendido (só na administração). */
   sold_count?: number;
 }

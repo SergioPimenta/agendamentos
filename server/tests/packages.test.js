@@ -273,6 +273,39 @@ describe('pacotes de horas', () => {
     await call('POST', '/admin/packages/grant', { token: admin, body: { user_id: clientId, package_id: pkg.id } });
   });
 
+  it('o pacote pode aparecer para todos os clientes ou só para alguns', async () => {
+    await call('POST', '/auth/register', { body: { name: 'Outra Cliente', email: 'outra-cliente@exemplo.com', password: 'senha-forte-1' } });
+    const other = (await call('POST', '/auth/login', { body: { email: 'outra-cliente@exemplo.com', password: 'senha-forte-1' } })).body.token;
+    const otherId = (await db.get("SELECT id FROM users WHERE email = 'outra-cliente@exemplo.com'")).id;
+    const base = { name: 'Pacote Exclusivo', minutes: 300, price_cents: 15000, validity_days: 30 };
+    const names = async (token) => (await call('GET', '/me/packages', { token })).body.packages.map((p) => p.name);
+
+    // Cliente que não existe é recusado.
+    assert.equal((await call('POST', '/admin/packages', { token: admin, body: { ...base, client_ids: [999999] } })).status, 400);
+
+    // Só para uma cliente: a administração vê o nome; as outras não veem nem compram.
+    const created = await call('POST', '/admin/packages', { token: admin, body: { ...base, client_ids: [clientId] } });
+    assert.equal(created.status, 201);
+    const pkg3 = created.body.package;
+    assert.deepEqual(pkg3.client_ids, [clientId]);
+    assert.equal(pkg3.clients[0].id, clientId);
+    assert.ok(pkg3.clients[0].name);
+    assert.ok((await names(client)).includes('Pacote Exclusivo'));
+    assert.ok(!(await names(other)).includes('Pacote Exclusivo'));
+    assert.equal((await call('POST', `/me/packages/${pkg3.id}/purchase`, { token: other })).status, 404);
+    assert.equal((await call('POST', `/me/packages/${pkg3.id}/purchase`, { token: client })).status, 201);
+
+    // A administração pode registrar a venda para qualquer cliente, e o catálogo mostra a lista.
+    assert.equal((await call('POST', '/admin/packages/grant', { token: admin, body: { user_id: otherId, package_id: pkg3.id } })).status, 201);
+    const listed = (await call('GET', '/admin/packages', { token: admin })).body.packages.find((p) => p.id === pkg3.id);
+    assert.deepEqual(listed.client_ids, [clientId]);
+
+    // Voltar para "todos os clientes": aparece para as duas.
+    const edited = await call('PUT', `/admin/packages/${pkg3.id}`, { token: admin, body: { ...base, client_ids: [] } });
+    assert.deepEqual(edited.body.package.client_ids, []);
+    assert.ok((await names(other)).includes('Pacote Exclusivo'));
+  });
+
   it('pacote já vendido não é excluído, só desativado; baixa manual também credita', async () => {
     assert.equal((await call('DELETE', `/admin/packages/${pkg.id}`, { token: admin })).status, 409);
 

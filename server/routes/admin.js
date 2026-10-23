@@ -11,7 +11,7 @@ import { requireAdmin, requireModule, verifyToken } from '../middleware/auth.js'
 import { LEVELS, MODULES, canEnterPanel, fullAccess, hasAccess, normalizePermissions } from '../services/access.js';
 import { CONSUMING, OCCUPYING, getBusinessHours, inList } from '../services/availability.js';
 import { birthdaysOfMonth } from '../services/birthdays.js';
-import { addManualCredit, bankOverview, grantPackage, listPurchases, presentPackage, revokeLot, roomNameMap } from '../services/packages.js';
+import { addManualCredit, bankOverview, grantPackage, listPurchases, packageClientNames, presentPackage, revokeLot, roomNameMap } from '../services/packages.js';
 import { PLAN_ICONS, PLAN_LAYOUTS, presentShowcase } from '../services/plans.js';
 import {
   BOOKING_SELECT,
@@ -989,11 +989,14 @@ const packageInput = z.object({
   sort_order: z.coerce.number().int().min(0).max(999).optional().default(0),
   // Salas em que as horas valem; lista vazia = todas as salas.
   room_ids: z.array(id).max(100).optional().default([]),
+  // Clientes para quem o pacote aparece; lista vazia = todos os clientes.
+  client_ids: z.array(id).max(500).optional().default([]),
 });
 
 const packageValues = (d) => [
   d.name, d.subtitle, d.description, d.minutes, d.price_cents, d.validity_days, d.icon, d.featured ? 1 : 0, JSON.stringify(d.features), d.active ? 1 : 0, d.sort_order,
   d.room_ids.length ? JSON.stringify([...new Set(d.room_ids)]) : null,
+  d.client_ids.length ? JSON.stringify([...new Set(d.client_ids)]) : null,
 ];
 
 /** Recusa salas que não existem (ex.: apagadas depois de abrir o formulário). */
@@ -1003,6 +1006,17 @@ async function assertRoomsExist(roomIds) {
   const found = await db.query(`SELECT id FROM rooms WHERE id IN (${ids.map(() => '?').join(',')})`, ids);
   if (found.length !== ids.length) throw new HttpError(400, 'Alguma das salas escolhidas não existe mais. Atualize a página.');
 }
+
+/** Recusa clientes que não existem (ex.: apagados depois de abrir o formulário). */
+async function assertClientsExist(clientIds) {
+  const ids = [...new Set(clientIds)];
+  if (!ids.length) return;
+  const found = await db.query(`SELECT id FROM users WHERE role = 'client' AND id IN (${ids.map(() => '?').join(',')})`, ids);
+  if (found.length !== ids.length) throw new HttpError(400, 'Algum dos clientes escolhidos não existe mais. Atualize a página.');
+}
+
+/** Devolve o pacote já com a lista de salas e de clientes por nome. */
+const presentPackageFull = async (row) => presentPackage(row, await roomNameMap(), await packageClientNames([row]));
 
 const packageRow = (pid) =>
   db.get('SELECT k.*, (SELECT COUNT(*) FROM package_purchases p WHERE p.package_id = k.id AND p.status = \'paid\') AS sold_count FROM hour_packages k WHERE k.id = ?', [pid]);
@@ -1015,7 +1029,8 @@ router.get(
          FROM hour_packages k ORDER BY k.sort_order, k.id`,
     );
     const names = await roomNameMap();
-    res.json({ packages: rows.map((p) => presentPackage(p, names)) });
+    const clientNames = await packageClientNames(rows);
+    res.json({ packages: rows.map((p) => presentPackage(p, names, clientNames)) });
   }),
 );
 
@@ -1024,12 +1039,13 @@ router.post(
   asyncHandler(async (req, res) => {
     const d = parse(packageInput, req.body);
     await assertRoomsExist(d.room_ids);
+    await assertClientsExist(d.client_ids);
     const r = await db.run(
-      `INSERT INTO hour_packages (name, subtitle, description, minutes, price_cents, validity_days, icon, featured, features, active, sort_order, room_ids, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO hour_packages (name, subtitle, description, minutes, price_cents, validity_days, icon, featured, features, active, sort_order, room_ids, client_ids, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [...packageValues(d), nowStamp()],
     );
-    res.status(201).json({ package: presentPackage(await packageRow(r.insertId), await roomNameMap()) });
+    res.status(201).json({ package: await presentPackageFull(await packageRow(r.insertId)) });
   }),
 );
 
@@ -1057,11 +1073,12 @@ router.put(
     if (!(await db.get('SELECT id FROM hour_packages WHERE id = ?', [pid]))) throw new HttpError(404, 'Pacote não encontrado.');
     const d = parse(packageInput, req.body);
     await assertRoomsExist(d.room_ids);
+    await assertClientsExist(d.client_ids);
     await db.run(
-      `UPDATE hour_packages SET name = ?, subtitle = ?, description = ?, minutes = ?, price_cents = ?, validity_days = ?, icon = ?, featured = ?, features = ?, active = ?, sort_order = ?, room_ids = ? WHERE id = ?`,
+      `UPDATE hour_packages SET name = ?, subtitle = ?, description = ?, minutes = ?, price_cents = ?, validity_days = ?, icon = ?, featured = ?, features = ?, active = ?, sort_order = ?, room_ids = ?, client_ids = ? WHERE id = ?`,
       [...packageValues(d), pid],
     );
-    res.json({ package: presentPackage(await packageRow(pid), await roomNameMap()) });
+    res.json({ package: await presentPackageFull(await packageRow(pid)) });
   }),
 );
 

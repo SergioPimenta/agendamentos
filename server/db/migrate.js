@@ -479,6 +479,11 @@ const migrations = [
     ],
   },
   {
+    // Pacote de horas só para alguns clientes (lista de ids em JSON; vazio = todos os clientes).
+    id: '025_package_clients',
+    statements: () => [`ALTER TABLE hour_packages ADD COLUMN client_ids TEXT NULL`],
+  },
+  {
     // Primeiro acesso por código enviado ao e-mail (clientes vindos do sistema anterior).
     id: '024_first_login_code',
     statements: () => [

@@ -4,11 +4,11 @@ import { PackageCard } from '../../components/plans/PackageCard';
 import { PLAN_ICONS } from '../../components/plans/PlanCard';
 import { Button } from '../../components/ui/Button';
 import { Badge, EmptyState, ErrorState, Skeleton, useConfirm, useToast } from '../../components/ui/Feedback';
-import { Input, Select, Switch } from '../../components/ui/Form';
+import { Input, SearchInput, Select, Switch } from '../../components/ui/Form';
 import { Modal } from '../../components/ui/Modal';
 import { DataTable, PageHeader, Td, Th } from '../../components/ui/Misc';
 import { useAuth } from '../../contexts/AuthContext';
-import { useApi } from '../../hooks/useApi';
+import { useApi, useDebounced } from '../../hooks/useApi';
 import { cn } from '../../lib/cn';
 import { fmtDateFull, fmtDuration, fmtMoney } from '../../lib/format';
 import { api } from '../../services/api';
@@ -70,7 +70,7 @@ export default function AdminPackages() {
               key={p.id}
               pkg={p}
               className={cn(!p.active && 'opacity-60')}
-              badges={!p.active ? <Badge tone="mist">Inativo</Badge> : null}
+              badges={<>{!p.active && <Badge tone="mist">Inativo</Badge>}{p.client_ids.length > 0 && <Badge tone="clay">Só para {p.client_ids.length} cliente{p.client_ids.length === 1 ? '' : 's'}</Badge>}</>}
               footer={
                 <div className="flex items-center justify-between gap-3">
                   <span className={cn('text-[12.5px]', p.featured ? 'text-cream/70' : 'text-stone-light')}>{p.sold_count ?? 0} venda{p.sold_count === 1 ? '' : 's'}</span>
@@ -112,10 +112,55 @@ export default function AdminPackages() {
   );
 }
 
+type PickedClient = { id: number; name: string };
+
+/** Escolha de clientes por busca: digite parte do nome, e-mail ou empresa e clique para adicionar. */
+function ClientPicker({ value, onChange }: { value: PickedClient[]; onChange: (clients: PickedClient[]) => void }) {
+  const [text, setText] = useState('');
+  const q = useDebounced(text.trim(), 300);
+  const found = useApi(() => (q.length >= 2 ? api.get<{ users: Client[] }>('/admin/users', { q, role: 'client', page: '1', per_page: '8' }) : Promise.resolve(null)), [q]);
+  const chosen = new Set(value.map((c) => c.id));
+  const results = (found.data?.users ?? []).filter((u) => !chosen.has(u.id));
+
+  return (
+    <div className="flex flex-col gap-3">
+      {value.length > 0 && (
+        <ul className="flex flex-wrap gap-2" aria-label="Clientes escolhidos">
+          {value.map((c) => (
+            <li key={c.id} className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-sage-700/25 bg-sage-dim py-1 pr-1.5 pl-3 text-[12.5px] text-ink">
+              <span className="truncate">{c.name}</span>
+              <button type="button" aria-label={`Remover ${c.name}`} onClick={() => onChange(value.filter((x) => x.id !== c.id))} className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-full text-stone hover:bg-rose-dim hover:text-rose"><X size={12} /></button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <SearchInput placeholder="Buscar cliente por nome, e-mail ou empresa…" aria-label="Buscar cliente" value={text} onChange={(e) => setText(e.target.value)} />
+      {text.trim().length > 0 && text.trim().length < 2 && <p className="text-[12.5px] text-stone-light">Digite ao menos 2 letras.</p>}
+      {q.length >= 2 && found.data && (
+        results.length === 0 ? (
+          <p className="text-[12.5px] text-stone">Nenhum cliente encontrado{found.data.users.length ? ' além dos já escolhidos' : ''}.</p>
+        ) : (
+          <ul className="divide-y divide-ink/8 overflow-hidden rounded-xl border border-ink/10 bg-cream" aria-label="Resultados da busca">
+            {results.map((u) => (
+              <li key={u.id}>
+                <button type="button" onClick={() => { onChange([...value, { id: u.id, name: u.name }]); setText(''); }} className="flex w-full cursor-pointer items-center justify-between gap-3 px-4 py-2.5 text-left text-[13.5px] transition-colors hover:bg-sage-dim/60">
+                  <span className="min-w-0"><span className="block truncate font-medium text-ink">{u.name}</span><span className="block truncate text-[12px] text-stone">{u.company || (u.has_email ? u.email : u.city) || '—'}</span></span>
+                  <Plus size={16} className="shrink-0 text-sage-700" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )
+      )}
+    </div>
+  );
+}
+
 const blank = {
   name: '', subtitle: '', description: '', hours: '4', price: '0,00', validity: '30', icon: '' as PlanIconKey | '',
   featured: false, active: true, features: [] as string[], sort_order: 0,
   allRooms: true, roomIds: [] as number[],
+  allClients: true, clients: [] as PickedClient[],
 };
 
 function PackageForm({ open, pkg, onClose, onSaved, onDelete }: { open: boolean; pkg?: HourPackage; onClose: () => void; onSaved: () => void; onDelete: (p: HourPackage) => void }) {
@@ -136,6 +181,7 @@ function PackageForm({ open, pkg, onClose, onSaved, onDelete }: { open: boolean;
         price: (pkg.price_cents / 100).toFixed(2).replace('.', ','), validity: String(pkg.validity_days), icon: pkg.icon,
         featured: pkg.featured, active: pkg.active, features: [...pkg.features], sort_order: pkg.sort_order,
         allRooms: pkg.room_ids.length === 0, roomIds: [...pkg.room_ids],
+        allClients: pkg.client_ids.length === 0, clients: pkg.clients.map((c) => ({ ...c })),
       } : blank);
     }
   }
@@ -147,10 +193,15 @@ function PackageForm({ open, pkg, onClose, onSaved, onDelete }: { open: boolean;
       setError('Escolha ao menos uma sala ou marque "Todas as salas".');
       return;
     }
+    if (!f.allClients && f.clients.length === 0) {
+      setError('Escolha ao menos um cliente ou marque "Todos os clientes".');
+      return;
+    }
     setSaving(true);
     try {
       const body = {
         room_ids: f.allRooms ? [] : f.roomIds,
+        client_ids: f.allClients ? [] : f.clients.map((c) => c.id),
         name: f.name, subtitle: f.subtitle, description: f.description,
         minutes: Math.round(parseFloat(f.hours.replace(',', '.') || '0') * 60),
         price_cents: parseMoney(f.price), validity_days: Math.max(0, Math.round(Number(f.validity) || 0)),
@@ -240,6 +291,32 @@ function PackageForm({ open, pkg, onClose, onSaved, onDelete }: { open: boolean;
             </>
           )}
           {pkg && <p className="text-[12.5px] text-stone-light">Mudar as salas vale só para as próximas vendas: quem já comprou mantém as salas da compra.</p>}
+        </section>
+
+        <section className="flex flex-col gap-3">
+          <h3 className="font-display text-[16px] font-medium text-ink">Clientes do pacote</h3>
+          <div role="radiogroup" aria-label="Clientes para quem o pacote aparece" className="inline-flex w-fit rounded-full border border-ink/10 bg-cream p-1">
+            {([[true, 'Todos os clientes'], [false, 'Só alguns clientes']] as const).map(([v, label]) => (
+              <button
+                key={label}
+                type="button"
+                role="radio"
+                aria-checked={f.allClients === v}
+                onClick={() => setF({ ...f, allClients: v })}
+                className={cn('rounded-full px-4 py-2 text-[13px] font-semibold transition-colors', f.allClients === v ? 'bg-sage-700 text-cream' : 'text-stone hover:text-ink')}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {f.allClients ? (
+            <p className="text-[13px] text-stone">O pacote aparece em Planos e pacotes para todos os clientes, inclusive os que se cadastrarem depois.</p>
+          ) : (
+            <>
+              <p className="text-[13px] text-stone">Só os clientes escolhidos veem e podem comprar este pacote. Você ainda pode registrar uma venda dele para qualquer cliente.</p>
+              <ClientPicker value={f.clients} onChange={(clients) => setF({ ...f, clients })} />
+            </>
+          )}
         </section>
 
         <section className="grid gap-4 sm:grid-cols-2">

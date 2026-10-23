@@ -34,9 +34,25 @@ export async function roomNameMap(conn = db) {
 
 const roomNamesOf = (ids, names) => (names ? ids.map((id) => names.get(id)).filter(Boolean) : []);
 
-export const presentPackage = (p, names = null) => ({
+/** O pacote aparece para este cliente? Sem lista de clientes, aparece para todos. */
+export const visibleToClient = (p, userId) => {
+  const ids = idList(p.client_ids);
+  return ids.length === 0 || ids.includes(Number(userId));
+};
+
+/** Mapa id → nome dos clientes citados nos pacotes (para a administração ver para quem cada pacote vale). */
+export async function packageClientNames(rows, conn = db) {
+  const ids = [...new Set(rows.flatMap((p) => idList(p.client_ids)))];
+  if (!ids.length) return new Map();
+  const users = await conn.query(`SELECT id, name FROM users WHERE id IN (${ids.map(() => '?').join(',')})`, ids);
+  return new Map(users.map((u) => [Number(u.id), u.name]));
+}
+
+export const presentPackage = (p, names = null, clientNames = null) => ({
   room_ids: idList(p.room_ids),
   rooms: roomNamesOf(idList(p.room_ids), names),
+  client_ids: idList(p.client_ids),
+  clients: clientNames ? idList(p.client_ids).map((id) => ({ id, name: clientNames.get(id) ?? 'Cliente removido' })) : [],
   id: Number(p.id),
   name: p.name,
   subtitle: p.subtitle ?? '',
@@ -144,7 +160,7 @@ export async function packagesForClient(userId) {
   const pending = await db.get("SELECT package_id FROM package_purchases WHERE user_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1", [userId]);
   const names = await roomNameMap();
   return {
-    packages: rows.map((p) => presentPackage(p, names)),
+    packages: rows.filter((p) => visibleToClient(p, userId)).map((p) => presentPackage(p, names)),
     balance: await balanceFor(userId),
     pending_package_id: pending?.package_id == null ? null : Number(pending.package_id),
     online_payments: onlinePaymentsReady(await getSettings()),
@@ -154,7 +170,7 @@ export async function packagesForClient(userId) {
 /** Compra um pacote: cria a compra pendente, a conta a receber e o link de pagamento online. */
 export async function purchasePackage({ actor, packageId }) {
   const pkg = await db.get('SELECT * FROM hour_packages WHERE id = ? AND active = 1', [packageId]);
-  if (!pkg) throw new HttpError(404, 'Pacote não encontrado.');
+  if (!pkg || !visibleToClient(pkg, actor.id)) throw new HttpError(404, 'Pacote não encontrado.');
   if (!onlinePaymentsReady(await getSettings())) {
     throw new HttpError(422, 'O pagamento online ainda não está ativado. Fale com a recepção para comprar um pacote.');
   }
