@@ -254,7 +254,11 @@ export interface Block {
 }
 
 export interface Statement {
+  /** Mês do extrato (AAAA-MM); vazio quando o período é personalizado. */
   month: string;
+  /** Primeiro e último dia cobertos pelo extrato. */
+  from: string;
+  to: string;
   plan: { id: number; name: string; included_minutes: number | null; unlimited: boolean; room_discount_percent: number } | null;
   included_total: number | null;
   included_used: number;

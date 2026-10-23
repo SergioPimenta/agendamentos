@@ -200,6 +200,18 @@ describe('planos e consumo', () => {
     await call('POST', `/bookings/${b1.id}/cancel`, { token, body: {} });
     const after = (await call('GET', `/me/usage?month=${d.slice(0, 7)}`, { token })).body;
     assert.equal(after.included_used, 60);
+
+    // Período personalizado por dia: só entra o que está entre as datas (inclusive).
+    const day = (await call('GET', `/me/usage?from=${d}&to=${d}`, { token })).body;
+    assert.deepEqual([day.from, day.to, day.month, day.totals.bookings, day.totals.amount_cents], [d, d, '', 1, 4950]);
+    const before = (await call('GET', `/me/usage?from=${addDays(d, -30)}&to=${addDays(d, -1)}`, { token })).body;
+    assert.equal(before.totals.bookings, 0);
+    const monthView = (await call('GET', `/me/usage?month=${d.slice(0, 7)}`, { token })).body;
+    assert.deepEqual([monthView.from, monthView.to].map((x) => x.slice(0, 7)), [d.slice(0, 7), d.slice(0, 7)]);
+    assert.equal((await call('GET', `/me/usage?from=${d}`, { token })).status, 400); // falta a data final
+    assert.equal((await call('GET', `/me/usage?from=${d}&to=${addDays(d, -1)}`, { token })).status, 400); // fim antes do início
+    assert.equal((await call('GET', `/me/usage?from=${d}&to=${addDays(d, 400)}`, { token })).status, 400); // mais de 1 ano
+    assert.equal((await call('GET', '/me/usage?from=2026-13-40&to=2026-13-41', { token })).status, 400);
   });
 });
 

@@ -33,7 +33,7 @@ import { onlinePaymentsReady } from '../services/settings.js';
 import { getSettings, publicSettings } from '../services/settings.js';
 import { HttpError, asyncHandler, parse } from '../utils/http.js';
 import { bookingToIcs } from '../utils/ics.js';
-import { DATE_RE, addDays, monthRange, nowLocal, TIME_RE, isValidDate } from '../utils/time.js';
+import { DATE_RE, addDays, daysBetween, monthRange, nowLocal, TIME_RE, isValidDate } from '../utils/time.js';
 
 const router = express.Router();
 
@@ -447,8 +447,10 @@ router.get(
 
 /* ---------------- consumo / faturas ---------------- */
 
-export async function monthStatement(userId, month, rules, viewerId = userId) {
-  const { from, to } = monthRange(month);
+export const monthStatement = (userId, month, rules, viewerId = userId) => rangeStatement(userId, monthRange(month), rules, viewerId, month);
+
+/** Extrato de um período qualquer (de/até, inclusive). `month` só preenche o campo quando o período é um mês. */
+export async function rangeStatement(userId, { from, to }, rules, viewerId = userId, month = '') {
   const now = nowLocal();
   const user = await db.get(
     `SELECT u.id, u.plan_id, p.name AS plan_name, p.included_minutes, p.unlimited, p.room_discount_percent
@@ -467,6 +469,8 @@ export async function monthStatement(userId, month, rules, viewerId = userId) {
 
   return {
     month,
+    from,
+    to,
     plan: user?.plan_id
       ? { id: Number(user.plan_id), name: user.plan_name, included_minutes: includedTotal, unlimited, room_discount_percent: Number(user.room_discount_percent) }
       : null,
@@ -488,7 +492,21 @@ export async function monthStatement(userId, month, rules, viewerId = userId) {
 router.get(
   '/me/usage',
   asyncHandler(async (req, res) => {
-    const q = parse(z.object({ month: z.string().regex(/^\d{4}-\d{2}$/).optional() }), req.query);
+    const q = parse(
+      z.object({
+        month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+        // Período personalizado por dia: de/até (inclusive), no máximo 1 ano.
+        from: z.string().regex(DATE_RE).refine(isValidDate, 'Data inicial inválida').optional(),
+        to: z.string().regex(DATE_RE).refine(isValidDate, 'Data final inválida').optional(),
+      }),
+      req.query,
+    );
+    if (q.from || q.to) {
+      if (!q.from || !q.to) throw new HttpError(400, 'Informe a data inicial e a final.');
+      if (q.to < q.from) throw new HttpError(400, 'A data final não pode ser antes da inicial.');
+      if (daysBetween(q.from, q.to) > 366) throw new HttpError(400, 'Escolha um período de até 1 ano.');
+      return res.json(await rangeStatement(req.user.id, { from: q.from, to: q.to }, await getSettings()));
+    }
     const month = q.month || nowLocal().date.slice(0, 7);
     res.json(await monthStatement(req.user.id, month, await getSettings()));
   }),

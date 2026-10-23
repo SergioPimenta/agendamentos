@@ -4,10 +4,11 @@ import { ChevronLeft, ChevronRight, Receipt, ShieldCheck } from 'lucide-react';
 import { BookingDetail } from '../../components/booking/BookingDetail';
 import { Badge, EmptyState, ErrorState, PaymentBadge, Skeleton, useToast } from '../../components/ui/Feedback';
 import { Button, IconButton } from '../../components/ui/Button';
-import { Card, CardHeader, DataTable, PageHeader, ProgressBar, Stat, Td, Th } from '../../components/ui/Misc';
+import { Input } from '../../components/ui/Form';
+import { Card, CardHeader, DataTable, PageHeader, ProgressBar, Segmented, Stat, Td, Th } from '../../components/ui/Misc';
 import { useAuth } from '../../contexts/AuthContext';
 import { useApi } from '../../hooks/useApi';
-import { addMonths, fmtDateShort, fmtDuration, fmtMoney, fmtMonth, todayStr } from '../../lib/format';
+import { addDays, addMonths, fmtDateFull, fmtDateShort, fmtDuration, fmtMoney, fmtMonth, todayStr } from '../../lib/format';
 import { api } from '../../services/api';
 import { BankCard } from '../../components/plans/BankCard';
 import type { Booking, ClientPackages, OnlinePayment, Statement } from '../../types';
@@ -17,7 +18,14 @@ interface StatementRow { month: string; bookings: number; minutes: number; amoun
 export default function Usage() {
   const [month, setMonth] = useState(todayStr().slice(0, 7));
   const [selected, setSelected] = useState<Booking | null>(null);
-  const usage = useApi(() => api.get<Statement>('/me/usage', { month }), [month]);
+  // mode: o mês inteiro (com as setas) ou um período personalizado, escolhido dia a dia.
+  const [mode, setMode] = useState<'month' | 'days'>('month');
+  const [range, setRange] = useState({ from: `${todayStr().slice(0, 7)}-01`, to: todayStr() });
+  const rangeOk = Boolean(range.from && range.to && range.to >= range.from);
+  const usage = useApi(
+    () => (mode === 'month' ? api.get<Statement>('/me/usage', { month }) : rangeOk ? api.get<Statement>('/me/usage', { from: range.from, to: range.to }) : Promise.resolve(null)),
+    [mode, month, range.from, range.to],
+  );
   const history = useApi(() => api.get<{ statements: StatementRow[] }>('/me/statements'), []);
   const bank = useApi(() => api.get<ClientPackages>('/me/packages'), []);
   const u = usage.data;
@@ -59,27 +67,52 @@ export default function Usage() {
     <>
       <PageHeader eyebrow="Financeiro" title="Consumo e faturas" description="Veja quanto do seu plano já foi usado e o que há para pagar em cada mês." />
 
-      <div className="mb-6 flex items-center gap-2">
-        <IconButton label="Mês anterior" onClick={() => setMonth(addMonths(month, -1))}><ChevronLeft size={18} /></IconButton>
-        <span className="min-w-[160px] text-center font-display text-[20px] font-medium text-ink">{fmtMonth(month)}</span>
-        <IconButton label="Próximo mês" onClick={() => setMonth(addMonths(month, 1))}><ChevronRight size={18} /></IconButton>
+      <div className="mb-6 flex flex-wrap items-end gap-x-6 gap-y-4">
+        <Segmented
+          value={mode}
+          onChange={setMode}
+          options={[{ value: 'month', label: 'Por mês' }, { value: 'days', label: 'Personalizado por dia' }]}
+        />
+        {mode === 'month' ? (
+          <div className="flex items-center gap-2">
+            <IconButton label="Mês anterior" onClick={() => setMonth(addMonths(month, -1))}><ChevronLeft size={18} /></IconButton>
+            <span className="min-w-[160px] text-center font-display text-[20px] font-medium text-ink">{fmtMonth(month)}</span>
+            <IconButton label="Próximo mês" onClick={() => setMonth(addMonths(month, 1))}><ChevronRight size={18} /></IconButton>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-end gap-3">
+            <Input label="De" type="date" max={range.to || undefined} value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} />
+            <Input label="Até" type="date" min={range.from || undefined} value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} />
+            <div className="flex gap-2 pb-0.5">
+              <Button type="button" variant="ghost" size="sm" onClick={() => setRange({ from: addDays(todayStr(), -6), to: todayStr() })}>Últimos 7 dias</Button>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setRange({ from: addDays(todayStr(), -29), to: todayStr() })}>Últimos 30 dias</Button>
+            </div>
+          </div>
+        )}
       </div>
+      {mode === 'days' && !rangeOk && <p role="alert" className="mb-6 text-[13.5px] text-rose">Escolha a data inicial e uma data final igual ou depois dela.</p>}
 
       {usage.error && <ErrorState message={usage.error} onRetry={usage.refetch} />}
 
       {bank.data && <BankCard id="banco-consumo" balance={bank.data.balance} linkTo="/app/planos" className="mb-6" />}
 
-      {!u ? (
+      {mode === 'days' && !rangeOk ? null : !u ? (
         <div className="grid gap-4 sm:grid-cols-3">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-[130px] rounded-[22px]" />)}</div>
       ) : (
         <>
           <div className="mb-6 grid gap-4 sm:grid-cols-3">
             <Stat label="Horas reservadas" value={fmtDuration(u.totals.minutes)} hint={`${u.totals.bookings} reserva${u.totals.bookings === 1 ? '' : 's'}`} />
-            <Stat label="Total do mês" value={fmtMoney(u.totals.amount_cents)} hint={u.totals.paid_cents > 0 ? `${fmtMoney(u.totals.paid_cents)} já pago` : 'Horas extras além do plano'} tone="clay" />
+            <Stat label={mode === 'days' ? 'Total do período' : 'Total do mês'} value={fmtMoney(u.totals.amount_cents)} hint={u.totals.paid_cents > 0 ? `${fmtMoney(u.totals.paid_cents)} já pago` : 'Horas extras além do plano'} tone="clay" />
             <Stat label="A pagar" value={fmtMoney(u.totals.pending_cents)} hint={u.totals.pending_cents > 0 ? (settings?.online_payments ? 'Pague online abaixo' : 'Acerte com a recepção') : 'Tudo em dia'} tone="amber" />
           </div>
 
-          {settings?.online_payments && u.totals.pending_cents > 0 && (
+          {mode === 'days' && u.totals.pending_cents > 0 && (
+            <p className="mb-6 rounded-2xl bg-amber-dim px-5 py-3.5 text-[13.5px] text-ink">
+              Há {fmtMoney(u.totals.pending_cents)} a pagar neste período. O pagamento é feito por mês: volte para <button type="button" className="cursor-pointer font-semibold text-sage-700 underline" onClick={() => setMode('month')}>Por mês</button> para pagar online.
+            </p>
+          )}
+
+          {mode === 'month' && settings?.online_payments && u.totals.pending_cents > 0 && (
             <Card className="mb-6 border-sage-700/25">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-start gap-3.5">
@@ -99,6 +132,8 @@ export default function Usage() {
               <CardHeader title={`Plano ${u.plan.name}`} subtitle={u.plan.room_discount_percent > 0 ? `${u.plan.room_discount_percent}% de desconto nas horas extras` : undefined} />
               {u.plan.unlimited ? (
                 <p className="text-[13.5px] text-stone">Uso ilimitado das salas — nenhuma cobrança por horas.</p>
+              ) : mode === 'days' ? (
+                <p className="text-[13.5px] text-stone"><strong className="font-display text-[22px] font-medium text-ink">{fmtDuration(u.included_used)}</strong> das horas do plano usadas neste período. O saldo do plano é mensal: para ver quanto sobra, use a visão <button type="button" className="cursor-pointer font-semibold text-sage-700 underline" onClick={() => setMode('month')}>Por mês</button>.</p>
               ) : u.included_total ? (
                 <>
                   <div className="mb-2 flex items-baseline justify-between text-[13px] text-stone">
@@ -113,9 +148,9 @@ export default function Usage() {
             </Card>
           )}
 
-          <h2 className="mb-3 font-display text-[19px] font-medium text-ink">Detalhamento</h2>
+          <h2 className="mb-3 font-display text-[19px] font-medium text-ink">Detalhamento{mode === 'days' && <span className="ml-2 text-[13px] font-normal text-stone">{fmtDateFull(u.from)} a {fmtDateFull(u.to)}</span>}</h2>
           {u.bookings.length === 0 ? (
-            <div className="rounded-[22px] border border-ink/8 bg-cream"><EmptyState icon={<Receipt />} title="Nenhuma reserva neste mês" /></div>
+            <div className="rounded-[22px] border border-ink/8 bg-cream"><EmptyState icon={<Receipt />} title={mode === 'days' ? 'Nenhuma reserva neste período' : 'Nenhuma reserva neste mês'} /></div>
           ) : (
             <DataTable>
               <thead><tr><Th>Data</Th><Th>Sala</Th><Th>Duração</Th><Th>No plano</Th><Th className="text-right">Valor</Th><Th>Situação</Th></tr></thead>
@@ -153,7 +188,7 @@ export default function Usage() {
             {history.data.statements.map((s) => {
               const open = s.amount_cents - s.paid_cents;
               return (
-                <tr key={s.month} onClick={() => setMonth(s.month)} className="cursor-pointer transition-colors hover:bg-sage-dim/50">
+                <tr key={s.month} onClick={() => { setMode('month'); setMonth(s.month); }} className="cursor-pointer transition-colors hover:bg-sage-dim/50">
                   <Td className="font-medium">{fmtMonth(s.month)}</Td>
                   <Td>{s.bookings}</Td>
                   <Td>{fmtDuration(s.minutes)}</Td>
