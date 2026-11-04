@@ -11,6 +11,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useApi } from '../../hooks/useApi';
 import { fmtMoney } from '../../lib/format';
 import { api } from '../../services/api';
+import { Modal } from '../../components/ui/Modal';
 import { PageHeader } from '../../components/ui/Misc';
 import type { ClientPackages, ClientPlan, ClientPlans, HourPackage, OnlinePayment, User } from '../../types';
 
@@ -21,6 +22,7 @@ export default function PlansPage() {
   const [params, setParams] = useSearchParams();
   const [busy, setBusy] = useState<number | null>(null);
   const [buying, setBuying] = useState<number | null>(null);
+  const [openPlan, setOpenPlan] = useState<number | null>(null);
   const q = useApi(() => api.get<ClientPlans>('/me/plans'), []);
   const pk = useApi(() => api.get<ClientPackages>('/me/packages'), []);
   const d = q.data;
@@ -148,18 +150,18 @@ export default function PlansPage() {
               plan={p}
               className={current && !p.featured ? 'border-sage-700 ring-2 ring-sage-700/15' : undefined}
               badges={current ? <Badge tone={p.featured ? 'mist' : 'sage'}><Check size={12} />Seu plano</Badge> : pending ? <Badge tone="amber">Aguardando pagamento</Badge> : null}
-              footer={p.shift ? (
-                <ShiftPicker plan={p} online={d.online_payments} busy={busy === p.id} onContract={(b) => contractShift(p, b)} />
-              ) : p.combos.length > 0 ? (
-                <ComboPicker
-                  plan={p}
-                  dark={p.featured}
-                  online={d.online_payments}
-                  chosen={comboChoice[p.id] ?? p.combos[0].id}
-                  onChoose={(id) => setComboChoice((c) => ({ ...c, [p.id]: id }))}
-                  busy={busy === p.id}
-                  onContract={(id) => contractCombo(p, id)}
-                />
+              footer={p.shift || p.combos.length > 0 ? (
+                // Categoria de sala, turno e dia só aparecem ao contratar: o cartão mostra apenas o resumo e o botão.
+                <div className="flex flex-col gap-2.5">
+                  <Button className="w-full" variant={p.featured ? 'light' : 'primary'} onClick={() => setOpenPlan(p.id)}>
+                    {p.shift?.cycle ? (p.shift.cycle.can_renew ? 'Renovar' : 'Ver meu ciclo') : p.combo_cycle ? 'Ver meu ciclo' : p.cta_label || 'Contratar'}
+                  </Button>
+                  {(p.shift?.cycle || p.combo_cycle) && (
+                    <p className={`text-[12.5px] leading-snug ${p.featured ? 'text-cream/80' : 'text-stone'}`}>
+                      {p.shift?.cycle ? `Ciclo em andamento, última reserva em ${dmy(p.shift.cycle.last_date)}.` : `Ciclo em andamento${p.combo_cycle?.expires_at ? ` até ${dmy(p.combo_cycle.expires_at)}` : ''}.`}
+                    </p>
+                  )}
+                </div>
               ) : p.contact_only && !current ? contactButton : (
                 <Button
                   className="w-full"
@@ -175,6 +177,34 @@ export default function PlansPage() {
           );
         })}
       </div>
+
+      {d && (() => {
+        const p = d.plans.find((x) => x.id === openPlan);
+        return (
+          <Modal
+            open={!!p}
+            onClose={() => setOpenPlan(null)}
+            locked={busy != null}
+            size="md"
+            title={p ? `Contratar ${p.name}` : ''}
+            subtitle={p ? (p.shift ? 'Escolha a categoria, o horário e o dia. Confira as datas e siga para o pagamento.' : 'Escolha a categoria de sala e siga para o pagamento.') : undefined}
+          >
+            {p?.shift ? (
+              <ShiftPicker plan={p} online={d.online_payments} busy={busy === p.id} onContract={(b) => contractShift(p, b)} />
+            ) : p ? (
+              <ComboPicker
+                plan={p}
+                dark={false}
+                online={d.online_payments}
+                chosen={comboChoice[p.id] ?? p.combos[0].id}
+                onChoose={(id) => setComboChoice((c) => ({ ...c, [p.id]: id }))}
+                busy={busy === p.id}
+                onContract={(id) => contractCombo(p, id)}
+              />
+            ) : null}
+          </Modal>
+        );
+      })()}
 
       {pk.data && pk.data.packages.length > 0 && (
         <section className="mt-14" aria-labelledby="pacotes-titulo">
@@ -276,7 +306,7 @@ function ComboPicker({ plan, dark, online, chosen, onChoose, busy, onContract }:
           {online ? `Contratar · ${fmtMoney(selected.price_cents)}` : 'Fale com a recepção'}
         </Button>
       )}
-      <p className={`text-[12px] leading-snug ${dark ? 'text-cream/65' : 'text-stone-light'}`}>4 horas pré-pagas, válidas por 30 dias. Pague com cartão ou Pix e gerencie tudo em Minhas reservas.</p>
+      <p className={`text-[12px] leading-snug ${dark ? 'text-cream/65' : 'text-stone-light'}`}>4 horas pré-pagas, válidas por 30 dias. Pagamento online seguro, com Pix, cartão ou boleto. Gerencie tudo em Minhas reservas.</p>
     </div>
   );
 }

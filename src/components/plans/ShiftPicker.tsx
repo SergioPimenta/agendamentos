@@ -115,6 +115,7 @@ export function ShiftPicker({ plan, online, busy, onContract }: Props) {
             {openDays.length === 0 && <option value="">Sem dias disponíveis neste turno</option>}
             {openDays.map((a) => <option key={a.weekday} value={a.weekday}>{a.name.charAt(0).toUpperCase() + a.name.slice(1)}</option>)}
           </Select>
+          {openDays.length === 0 && <p className="mt-1.5 text-[12px] text-stone-light">Este horário está fora do funcionamento do espaço nos dias liberados para o plano. Escolha outro ou fale com a recepção.</p>}
         </div>
       </section>
 
@@ -168,7 +169,7 @@ export function ShiftPicker({ plan, online, busy, onContract }: Props) {
         </Button>
         <p className="flex items-start gap-2 text-[11.5px] leading-snug text-stone">
           <CalendarCheck size={14} className="mt-0.5 shrink-0 text-sage-700" />
-          Valor fixo por mês ({info.sessions} {immersion ? 'dias' : 'turnos'}, nunca muda com o calendário). O primeiro pagamento é antecipado: ao confirmar, as reservas são criadas sozinhas e você as gerencia em Minhas reservas.
+          Pagamento online seguro, com Pix, cartão ou boleto. Valor fixo por mês ({info.sessions} {immersion ? 'dias' : 'turnos'}, nunca muda com o calendário). O primeiro pagamento é antecipado: ao confirmar, as reservas são criadas sozinhas e você as gerencia em Minhas reservas.
         </p>
       </div>
     </div>
