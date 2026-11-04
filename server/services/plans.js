@@ -2,6 +2,7 @@ import { db } from '../db/index.js';
 import { HttpError } from '../utils/http.js';
 import { nowLocal, nowStamp } from '../utils/time.js';
 import { createCharge } from './onlinePayments.js';
+import { SESSIONS, SHIFTS, activeShiftCycle, shiftAvailability, subscribeShift } from './fixedShift.js';
 import { activeComboCycle, presentPackage, purchasePackage, roomNameMap } from './packages.js';
 import { getSettings, onlinePaymentsReady } from './settings.js';
 
@@ -43,6 +44,7 @@ export const presentShowcase = (p) => ({
 
 const presentPlan = (p) => ({
   ...presentShowcase(p),
+  kind: p.kind ?? '',
   id: Number(p.id),
   name: p.name,
   description: p.description,
@@ -63,12 +65,22 @@ export async function plansForClient(userId) {
   // Planos com combos (ex.: Plano Raiz): o cliente escolhe a categoria de sala; cada combo é um pacote de horas do plano.
   const comboRows = await db.query('SELECT * FROM hour_packages WHERE active = 1 AND plan_id IS NOT NULL ORDER BY sort_order, id');
   const names = comboRows.length ? await roomNameMap() : null;
-  const cycle = comboRows.length ? await activeComboCycle(userId) : null;
+  const hasShift = rows.some((p) => p.kind === 'shift');
+  const shiftInfo = hasShift ? { shifts: SHIFTS, availability: await shiftAvailability(), sessions: SESSIONS } : null;
+  const result = [];
+  for (const p of rows) {
+    const combos = comboRows.filter((c) => Number(c.plan_id) === Number(p.id));
+    const isShift = p.kind === 'shift';
+    result.push({
+      ...presentPlan(p),
+      combos: combos.map((c) => presentPackage(c, names)),
+      combo_cycle: combos.length && !isShift ? await activeComboCycle(userId, db, p.id) : null,
+      // Turno fixo: horários dos turnos, dias em que cada um cabe e o ciclo em andamento (para renovar).
+      shift: isShift ? { ...shiftInfo, cycle: await activeShiftCycle(userId, Number(p.id)) } : null,
+    });
+  }
   return {
-    plans: rows.map((p) => {
-      const combos = comboRows.filter((c) => Number(c.plan_id) === Number(p.id));
-      return { ...presentPlan(p), combos: combos.map((c) => presentPackage(c, names)), combo_cycle: combos.length ? cycle : null };
-    }),
+    plans: result,
     current_plan_id: user?.plan_id == null ? null : Number(user.plan_id),
     pending_plan_id: pending ? Number(pending.plan_id) : null,
     online_payments: onlinePaymentsReady(await getSettings()),
@@ -76,17 +88,23 @@ export async function plansForClient(userId) {
 }
 
 /** Escolhe um plano. Devolve `{ activated: true }` quando já valeu, ou `{ payment }` com o link para pagar. */
-export async function subscribeToPlan({ actor, planId, packageId = null }) {
+export async function subscribeToPlan({ actor, planId, packageId = null, shift = null }) {
   const plan = await db.get('SELECT * FROM plans WHERE id = ? AND active = 1', [planId]);
   if (!plan) throw new HttpError(404, 'Plano não encontrado.');
   const user = await db.get('SELECT id, plan_id FROM users WHERE id = ? AND active = 1', [actor.id]);
   if (Number(plan.contact_only)) throw new HttpError(422, 'Este plano é contratado com a recepção. Fale com a gente pelo WhatsApp.');
 
+  // Turno Fixo: sala, dia da semana e turno escolhidos; as reservas saem quando o primeiro pagamento confirmar.
+  if (plan.kind === 'shift') {
+    if (!shift) throw new HttpError(422, 'Escolha a sala, o dia da semana e o turno.');
+    return { activated: false, ...(await subscribeShift({ actor, plan, packageId: Number(packageId), roomId: Number(shift.room_id), weekday: Number(shift.weekday), shift: shift.shift, partner: shift.partner ?? null })) };
+  }
+
   // Plano com combos (Plano Raiz): contrata-se um combo por ciclo de 30 dias, na categoria de sala escolhida. Pode renovar quando o ciclo acabar.
   const combos = await db.query('SELECT id FROM hour_packages WHERE plan_id = ? AND active = 1', [plan.id]);
   if (combos.length) {
     if (!packageId || !combos.some((c) => Number(c.id) === Number(packageId))) throw new HttpError(422, 'Escolha a categoria de sala do seu combo.');
-    const cycle = await activeComboCycle(actor.id);
+    const cycle = await activeComboCycle(actor.id, db, plan.id);
     if (cycle) {
       const until = cycle.expires_at ? ` Elas valem até ${cycle.expires_at.slice(8, 10)}/${cycle.expires_at.slice(5, 7)}.` : '';
       throw new HttpError(409, `Você ainda tem ${Math.floor(cycle.remaining / 60)}h${cycle.remaining % 60 ? String(cycle.remaining % 60).padStart(2, '0') : ''} do ciclo atual.${until} Os créditos não acumulam: a renovação fica disponível quando o ciclo terminar.`);

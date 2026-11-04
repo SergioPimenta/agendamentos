@@ -14,6 +14,7 @@ import financeRoutes from './routes/finance.js';
 import webhookRoutes from './routes/webhooks.js';
 import { sendBirthdayEmails } from './services/birthdays.js';
 import { releaseExpiredHolds } from './services/bookings.js';
+import { processShiftPurchases } from './services/fixedShift.js';
 import { autoCloseSessions } from './services/sessions.js';
 import { asyncHandler, errorHandler } from './utils/http.js';
 
@@ -59,6 +60,7 @@ export async function createApp() {
     }
     await releaseExpiredHolds();
     await autoCloseSessions();
+    await processShiftPurchases();
     await sendBirthdayEmails();
     res.json({ ok: true });
   }));

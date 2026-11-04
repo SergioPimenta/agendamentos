@@ -578,6 +578,10 @@ export interface PackagePurchase {
 /** Plano como o cliente o vê na hora de escolher. */
 export interface ClientPlan extends PlanShowcase {
   /** Combos do plano (ex.: Plano Raiz): um pacote de horas por categoria de sala. */
+  /** Plano de turno fixo (Acolhimento Premium): vem '' nos demais. */
+  kind: string;
+  /** Turno fixo: horários dos turnos, dias em que cada um cabe e o ciclo em andamento. */
+  shift: ShiftInfo | null;
   combos: HourPackage[];
   /** Ciclo do combo em andamento (horas que sobram e validade); null quando não há. */
   combo_cycle: { expires_at: string | null; remaining: number; name: string } | null;
@@ -634,4 +638,24 @@ export interface PaymentConfig {
   public_key: string | null;
   max_installments: number;
   hold_minutes: number;
+}
+
+export type ShiftKey = 'morning' | 'afternoon' | 'night';
+
+export interface ShiftInfo {
+  shifts: Record<ShiftKey, { label: string; start: string; end: string }>;
+  /** Para cada dia da semana (0 = domingo), em quais turnos o espaço está aberto. */
+  availability: { weekday: number; name: string; shifts: Record<ShiftKey, boolean> }[];
+  sessions: number;
+  cycle: { last_date: string; remaining_sessions: number; can_renew: boolean; slot: { room_id: number; weekday: number; shift: ShiftKey } } | null;
+}
+
+export interface ShiftPreview {
+  ok: boolean;
+  amount_cents: number;
+  minutes: number;
+  window: { label: string; start: string; end: string };
+  room: { id: number; name: string };
+  renewal: boolean;
+  dates: { date: string; ok: boolean; reason: string }[];
 }

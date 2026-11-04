@@ -4,6 +4,7 @@ import { shownEmail } from '../utils/email.js';
 import { HttpError } from '../utils/http.js';
 import { addDays, nowLocal, nowStamp } from '../utils/time.js';
 import { CONSUMING, inList } from './availability.js';
+import { processShiftPurchases } from './fixedShift.js';
 import { activatePackageForReceivable } from './packages.js';
 import { activatePlanForReceivable } from './plans.js';
 import { getSettings } from './settings.js';
@@ -222,6 +223,7 @@ export async function setEntryPaid(table, id, paid, { method: m, date } = {}) {
       // Baixa manual de uma troca de plano ou de uma compra de pacote também vale.
       await activatePlanForReceivable(id);
       await activatePackageForReceivable(id);
+      await processShiftPurchases().catch((e) => console.error('[turno fixo] falha ao criar as reservas:', e.message));
     }
   } else {
     await db.run(`UPDATE ${t} SET status = 'pending', paid_at = NULL, payment_method = NULL, updated_at = ? WHERE id = ?`, [nowStamp(), id]);

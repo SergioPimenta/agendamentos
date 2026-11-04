@@ -28,6 +28,7 @@ import { checkIn, checkOut, checkoutPreview, findRoomSession, computeOvertime } 
 import { createCharge, getPaymentFor, payBookingDirect, presentPayment, syncPayment } from '../services/onlinePayments.js';
 import { config } from '../config.js';
 import { packagesForClient, purchasePackage } from '../services/packages.js';
+import { previewShift } from '../services/fixedShift.js';
 import { plansForClient, subscribeToPlan } from '../services/plans.js';
 import { onlinePaymentsReady } from '../services/settings.js';
 import { getSettings, publicSettings } from '../services/settings.js';
@@ -537,14 +538,46 @@ router.get(
   }),
 );
 
+/** Turno fixo: as 4 datas do ciclo e se cada uma está livre, antes de contratar. */
+router.get(
+  '/me/plans/:id/shift-preview',
+  asyncHandler(async (req, res) => {
+    const planId = parse(z.coerce.number().int().positive(), req.params.id);
+    const q = parse(
+      z.object({
+        package_id: z.coerce.number().int().positive(),
+        room_id: z.coerce.number().int().positive(),
+        weekday: z.coerce.number().int().min(0).max(6),
+        shift: z.enum(['morning', 'afternoon', 'night']),
+      }),
+      req.query,
+    );
+    const plan = await db.get("SELECT id FROM plans WHERE id = ? AND active = 1 AND kind = 'shift'", [planId]);
+    if (!plan) throw new HttpError(404, 'Plano não encontrado.');
+    const { pkg: _pkg, ...preview } = await previewShift({ userId: req.user.id, planId, packageId: q.package_id, roomId: q.room_id, weekday: q.weekday, shift: q.shift });
+    res.json(preview);
+  }),
+);
+
 /** O cliente escolhe um plano: vale na hora se for sem mensalidade; se for pago, devolve o link de pagamento. */
 router.post(
   '/me/plans/:id/subscribe',
   asyncHandler(async (req, res) => {
     const planId = parse(z.coerce.number().int().positive(), req.params.id);
     // Planos com combos (Plano Raiz) pedem a categoria de sala escolhida.
-    const { package_id } = parse(z.object({ package_id: z.coerce.number().int().positive().optional() }), req.body ?? {});
-    res.status(201).json(await subscribeToPlan({ actor: req.user, planId, packageId: package_id ?? null }));
+    const body = parse(
+      z.object({
+        package_id: z.coerce.number().int().positive().optional(),
+        // Turno fixo: sala, dia da semana (0 = domingo), turno e, se quiser, o(a) parceiro(a) da dupla (recebe o convite das reservas).
+        room_id: z.coerce.number().int().positive().optional(),
+        weekday: z.coerce.number().int().min(0).max(6).optional(),
+        shift: z.enum(['morning', 'afternoon', 'night']).optional(),
+        partner: z.object({ name: z.string().trim().max(120).optional().default(''), email: z.string().trim().toLowerCase().email('E-mail do parceiro inválido').max(160) }).nullable().optional(),
+      }),
+      req.body ?? {},
+    );
+    const shift = body.room_id != null && body.weekday != null && body.shift ? { room_id: body.room_id, weekday: body.weekday, shift: body.shift, partner: body.partner ?? null } : null;
+    res.status(201).json(await subscribeToPlan({ actor: req.user, planId, packageId: body.package_id ?? null, shift }));
   }),
 );
 

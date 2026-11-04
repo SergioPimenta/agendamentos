@@ -4,6 +4,7 @@ import { config } from './config.js';
 import { createApp } from './index.js';
 import { sendBirthdayEmails } from './services/birthdays.js';
 import { releaseExpiredHolds } from './services/bookings.js';
+import { processShiftPurchases } from './services/fixedShift.js';
 import { autoCloseSessions } from './services/sessions.js';
 
 const app = await createApp();
@@ -13,6 +14,8 @@ app.listen(config.port, () => console.log(`[api] rodando na porta ${config.port}
 setInterval(() => releaseExpiredHolds().catch((e) => console.error('[reservas] falha ao liberar horários:', e.message)), 60 * 1000).unref();
 
 // Encerra sozinho (sem excedente) quem esqueceu o check-out. Roda a cada 5 minutos.
+// Rede de segurança: cria as reservas de turnos fixos já pagos que ainda não saíram.
+setInterval(() => processShiftPurchases().catch((e) => console.error('[turno fixo] falha ao criar as reservas:', e.message)), 5 * 60 * 1000).unref();
 setInterval(() => autoCloseSessions().catch((e) => console.error('[sessões] falha ao encerrar:', e.message)), 5 * 60 * 1000).unref();
 
 // E-mail de aniversário: confere a cada hora (e logo após ligar, caso o servidor tenha ficado fora do ar de manhã).

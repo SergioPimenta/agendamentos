@@ -170,7 +170,7 @@ export async function packagesForClient(userId) {
 }
 
 /** Compra um pacote: cria a compra pendente, a conta a receber e o link de pagamento online. */
-export async function purchasePackage({ actor, packageId, viaPlan = false }) {
+export async function purchasePackage({ actor, packageId, viaPlan = false, options = null }) {
   const pkg = await db.get('SELECT * FROM hour_packages WHERE id = ? AND active = 1', [packageId]);
   // Combo de plano só se compra pela tela do plano (lá valem as regras do ciclo).
   if (!pkg || !visibleToClient(pkg, actor.id) || (pkg.plan_id != null && !viaPlan)) throw new HttpError(404, 'Pacote não encontrado.');
@@ -186,6 +186,15 @@ export async function purchasePackage({ actor, packageId, viaPlan = false }) {
     await db.run('DELETE FROM package_purchases WHERE id = ?', [s.id]);
   }
 
+  // Compra com escolhas próprias (turno fixo): cada tentativa é uma compra nova; a pendente anterior do mesmo pacote é descartada.
+  if (options) {
+    const same = await db.query("SELECT id, receivable_id FROM package_purchases WHERE user_id = ? AND status = 'pending' AND package_id = ?", [actor.id, pkg.id]);
+    for (const s of same) {
+      if (s.receivable_id) await db.run("DELETE FROM receivables WHERE id = ? AND status = 'pending'", [s.receivable_id]);
+      await db.run('DELETE FROM package_purchases WHERE id = ?', [s.id]);
+    }
+  }
+
   let purchase = await db.get("SELECT * FROM package_purchases WHERE user_id = ? AND status = 'pending' AND package_id = ? ORDER BY id DESC LIMIT 1", [actor.id, pkg.id]);
   let receivableId = purchase?.receivable_id ? Number(purchase.receivable_id) : null;
   if (receivableId && !(await db.get("SELECT id FROM receivables WHERE id = ? AND status = 'pending'", [receivableId]))) {
@@ -195,9 +204,9 @@ export async function purchasePackage({ actor, packageId, viaPlan = false }) {
   if (!purchase) {
     const stamp = nowStamp();
     const r = await db.run(
-      `INSERT INTO package_purchases (user_id, package_id, name, minutes_total, price_cents, validity_days, room_ids, status, created_by, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
-      [actor.id, pkg.id, pkg.name, pkg.minutes, pkg.price_cents, pkg.validity_days, pkg.room_ids ?? null, actor.id, stamp, stamp],
+      `INSERT INTO package_purchases (user_id, package_id, name, minutes_total, price_cents, validity_days, room_ids, meta, status, created_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
+      [actor.id, pkg.id, options?.name ?? pkg.name, options?.minutes ?? pkg.minutes, pkg.price_cents, pkg.validity_days, options ? JSON.stringify(options.room_ids) : (pkg.room_ids ?? null), options?.meta ? JSON.stringify(options.meta) : null, actor.id, stamp, stamp],
     );
     const purchaseId = r.insertId;
     const rec = await db.run(
@@ -220,10 +229,15 @@ export async function purchasePackage({ actor, packageId, viaPlan = false }) {
 
 /** Chamado quando a conta do pacote é paga (online ou baixa manual): a compra vira saldo, com a validade a partir de hoje. */
 export async function activatePackageForReceivable(receivableId, conn = db) {
-  const p = await conn.get("SELECT id, user_id, package_id, validity_days FROM package_purchases WHERE receivable_id = ? AND status = 'pending'", [receivableId]);
+  const p = await conn.get("SELECT id, user_id, package_id, validity_days, meta FROM package_purchases WHERE receivable_id = ? AND status = 'pending'", [receivableId]);
   if (!p) return false;
   const today = nowLocal().date;
-  const expires = Number(p.validity_days) > 0 ? addDays(today, Number(p.validity_days)) : null;
+  let expires = Number(p.validity_days) > 0 ? addDays(today, Number(p.validity_days)) : null;
+  // Turno fixo: as horas valem até 35 dias depois da primeira reserva do ciclo (cobrem as 4 semanas, mesmo se o pagamento atrasar).
+  try {
+    const meta = JSON.parse(p.meta || 'null');
+    if (meta?.kind === 'shift' && meta.dates?.[0]) expires = addDays(meta.dates[0] > today ? meta.dates[0] : today, 35);
+  } catch { /* meta ilegível: segue com a validade do pacote */ }
   await conn.run("UPDATE package_purchases SET status = 'paid', paid_at = ?, expires_at = ?, updated_at = ? WHERE id = ?", [nowStamp(), expires, nowStamp(), p.id]);
   await joinPlanOfPackage(conn, p.user_id, p.package_id);
   return true;
@@ -239,13 +253,13 @@ async function joinPlanOfPackage(conn, userId, packageId) {
  * Ciclo em andamento de um combo de plano: lote pago, ainda dentro da validade e com horas sobrando.
  * Os créditos do combo não acumulam: só dá para contratar o próximo ciclo quando este termina (vence ou acaba).
  */
-export async function activeComboCycle(userId, conn = db) {
+export async function activeComboCycle(userId, conn = db, planId = null) {
   const today = nowLocal().date;
   const lots = await packageLots(conn, userId, today);
   const combos = await conn.query(
     `SELECT p.id FROM package_purchases p JOIN hour_packages k ON k.id = p.package_id
-      WHERE p.user_id = ? AND p.status = 'paid' AND k.plan_id IS NOT NULL`,
-    [userId],
+      WHERE p.user_id = ? AND p.status = 'paid' AND ${planId ? 'k.plan_id = ?' : 'k.plan_id IS NOT NULL'}`,
+    planId ? [userId, planId] : [userId],
   );
   const ids = new Set(combos.map((r) => Number(r.id)));
   const lot = lots.find((l) => ids.has(l.id) && l.remaining > 0);

@@ -8,6 +8,7 @@ import { CONSUMING, inList } from './availability.js';
 import { MIN_ONLINE_CENTS, formatBRL, getBookingRow, notifyBookingPaid, releaseExpiredHolds } from './bookings.js';
 import { sendTemplated } from './emailTemplates.js';
 import { METHOD_MAP, createCheckoutOrder, createDirectOrder, getOrder, pagarmeConfigured, pagarmeMode } from './pagarme.js';
+import { processShiftPurchases } from './fixedShift.js';
 import { activatePackageForReceivable } from './packages.js';
 import { activatePlanForReceivable } from './plans.js';
 import { getSettings, onlinePaymentsReady } from './settings.js';
@@ -227,6 +228,7 @@ async function settle(payment, order, charge) {
   });
 
   if (done) {
+    processShiftPurchases().catch((e) => console.error('[turno fixo] falha ao criar as reservas:', e.message));
     for (const id of confirmed) notifyBookingPaid(id).catch(() => {});
     const row = await paymentRow(payment.id);
     sendTemplated('payment_received', {

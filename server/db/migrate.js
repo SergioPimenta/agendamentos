@@ -606,6 +606,59 @@ const migrations = [
       },
     ],
   },
+  {
+    // Turno Fixo (Acolhimento Premium): um turno semanal fixo por mês (4 reservas), valor mensal fechado por categoria de sala.
+    // Cada categoria é um pacote do plano (plan_id); a compra guarda o turno escolhido em `meta`.
+    id: '030_turno_fixo',
+    statements: () => [
+      `ALTER TABLE plans ADD COLUMN kind VARCHAR(12) NULL`,
+      `ALTER TABLE package_purchases ADD COLUMN meta TEXT NULL`,
+      async (tx) => {
+        // Instalação nova (sem salas) segue o catálogo padrão; isto vale só para quem já tem salas cadastradas.
+        if (!Number((await tx.get('SELECT COUNT(*) AS n FROM rooms')).n)) return;
+        if (await tx.get("SELECT id FROM plans WHERE name = 'Turno Fixo'")) return;
+        await tx.run('UPDATE plans SET sort_order = sort_order + 1 WHERE sort_order >= 2');
+        const features = JSON.stringify([
+          'Seu turno semanal fixo: manhã (07h30 às 12h00), tarde (13h00 às 17h30) ou noite (18h00 às 22h00)',
+          'Valor mensal fixo e irredutível por calendário (4 turnos por mês, sempre o mesmo valor)',
+          'Primeiro pagamento antecipado no ato da contratação',
+          'Opção de dupla de profissionais parceiros, com fatura única para o titular do contrato',
+          'Há uma janela automática de 30 minutos entre os blocos da tarde e da noite',
+        ]);
+        const r = await tx.run(
+          `INSERT INTO plans (name, description, included_minutes, unlimited, room_discount_percent, price_cents, active, sort_order, subtitle, icon, price_label, price_note, featured, features, layout, cta_label, contact_only, kind)
+           VALUES ('Turno Fixo', ?, 0, 0, 0, 0, 1, 2, ?, 'sun', 'A partir de R$ 440,00', '/mês, 1 turno por semana', 0, ?, 'card', 'Escolher turno', 0, 'shift')`,
+          ['Acolhimento Premium: a sua sala reservada no mesmo turno, toda semana, com valor mensal fechado.', 'Modalidade de turno fixo · recorrência mensal', features],
+        );
+        const planId = Number(r.insertId);
+        const roomIds = async (slugs) => {
+          const out = [];
+          for (const slug of slugs) {
+            const room = await tx.get('SELECT id FROM rooms WHERE slug = ? OR slug = ?', [slug, `sala-${slug}`]);
+            if (room) out.push(Number(room.id));
+          }
+          return out;
+        };
+        const cats = [
+          { name: 'Turno Fixo · Brisa', sub: 'Sala Brisa', cents: 44000, slugs: ['brisa'] },
+          { name: 'Turno Fixo · Flor', sub: 'Sala Flor', cents: 54250, slugs: ['flor'] },
+          { name: 'Turno Fixo · Premium Maca', sub: 'Salas Sol e Terra', cents: 62000, slugs: ['sol', 'terra'] },
+          { name: 'Turno Fixo · Premium Poltrona', sub: 'Salas Mar e Árvore', cents: 69750, slugs: ['mar', 'arvore'] },
+          { name: 'Turno Fixo · Cachoeira', sub: 'Sala Cachoeira', cents: 85200, slugs: ['cachoeira'] },
+        ];
+        let order = 100;
+        for (const c of cats) {
+          order += 1;
+          const ids = await roomIds(c.slugs);
+          await tx.run(
+            `INSERT INTO hour_packages (name, subtitle, description, minutes, price_cents, validity_days, icon, featured, features, active, sort_order, room_ids, plan_id, created_at)
+             VALUES (?, ?, ?, 1080, ?, 35, 'sun', 0, '[]', 1, ?, ?, ?, ?)`,
+            [c.name, c.sub, 'Categoria do Turno Fixo: valor mensal para um turno por semana.', c.cents, order, ids.length ? JSON.stringify(ids) : null, planId, nowStamp()],
+          );
+        }
+      },
+    ],
+  },
 ];
 
 /**

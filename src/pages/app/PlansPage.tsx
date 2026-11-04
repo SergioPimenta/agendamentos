@@ -4,6 +4,7 @@ import { Check, MessageCircle, ShieldCheck } from 'lucide-react';
 import { BankCard } from '../../components/plans/BankCard';
 import { PackageCard } from '../../components/plans/PackageCard';
 import { PlanCard } from '../../components/plans/PlanCard';
+import { ShiftPicker } from '../../components/plans/ShiftPicker';
 import { Button, buttonClass } from '../../components/ui/Button';
 import { Badge, ErrorState, Skeleton, useConfirm, useToast } from '../../components/ui/Feedback';
 import { useAuth } from '../../contexts/AuthContext';
@@ -39,6 +40,21 @@ export default function PlansPage() {
   };
 
   const refreshUser = () => api.get<{ user: User }>('/auth/me').then((r) => setUser(r.user)).catch(() => {});
+
+  // Turno Fixo: contrata com a sala, o dia e o turno escolhidos (as reservas saem quando o pagamento confirmar).
+  const contractShift = async (p: ClientPlan, body: { package_id: number; room_id: number; weekday: number; shift: string; partner: { name: string; email: string } | null }) => {
+    setBusy(p.id);
+    try {
+      const r = await api.post<{ payment?: OnlinePayment }>(`/me/plans/${p.id}/subscribe`, body);
+      if (r.payment?.checkout_url) {
+        window.location.href = r.payment.checkout_url;
+        return;
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Não foi possível abrir o pagamento.');
+    }
+    setBusy(null);
+  };
 
   // Plano com combos (Plano Raiz): contrata o combo da categoria de sala escolhida.
   const [comboChoice, setComboChoice] = useState<Record<number, number>>({});
@@ -132,7 +148,9 @@ export default function PlansPage() {
               plan={p}
               className={current && !p.featured ? 'border-sage-700 ring-2 ring-sage-700/15' : undefined}
               badges={current ? <Badge tone={p.featured ? 'mist' : 'sage'}><Check size={12} />Seu plano</Badge> : pending ? <Badge tone="amber">Aguardando pagamento</Badge> : null}
-              footer={p.combos.length > 0 ? (
+              footer={p.shift ? (
+                <ShiftPicker plan={p} online={d.online_payments} busy={busy === p.id} onContract={(b) => contractShift(p, b)} />
+              ) : p.combos.length > 0 ? (
                 <ComboPicker
                   plan={p}
                   dark={p.featured}
