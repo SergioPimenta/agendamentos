@@ -14,7 +14,7 @@ interface Props {
   plan: ClientPlan;
   online: boolean;
   busy: boolean;
-  onContract: (body: { package_id: number; room_id: number; weekday: number; shift: ShiftKey; partner: { name: string; email: string } | null }) => void;
+  onContract: (body: { package_id: number; room_id: number; weekday: number; shift: ShiftKey; date?: string; partner: { name: string; email: string } | null }) => void;
 }
 
 /**
@@ -25,6 +25,7 @@ export function ShiftPicker({ plan, online, busy, onContract }: Props) {
   const info = plan.shift!;
   const cycle = info.cycle;
   const immersion = info.mode === 'immersion';
+  const daily = info.mode === 'daily';
   const shiftKeys = Object.keys(info.shifts) as ShiftKey[];
   const [shift, setShift] = useState<ShiftKey>(cycle?.slot.shift ?? shiftKeys[0]);
   // Na Imersão cada categoria tem um valor por horário: mostra só os do horário escolhido, mantendo a categoria (pelo subtítulo).
@@ -45,15 +46,20 @@ export function ShiftPicker({ plan, online, busy, onContract }: Props) {
 
   const fits = (w: number, s: ShiftKey) => info.availability.find((a) => a.weekday === w)?.shifts[s] ?? false;
   const openDays = info.availability.filter((a) => a.shifts[shift]);
+  // Diária avulsa: o cliente escolhe a data; o dia da semana sai dela.
+  const [date, setDate] = useState('');
+  const tomorrow = (() => { const t = new Date(); t.setDate(t.getDate() + 1); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`; })();
+  const dateDay = daily && /^\d{4}-\d{2}-\d{2}$/.test(date) && date >= tomorrow ? new Date(`${date}T12:00:00`).getDay() : null;
+  const dateOk = dateDay != null && fits(dateDay, shift);
   // Sem dia escolhido (ou o dia não comporta o turno): fica o primeiro que comporta.
-  const day = weekday != null && fits(weekday, shift) ? weekday : (openDays[0]?.weekday ?? null);
+  const day = daily ? (dateOk ? dateDay : null) : weekday != null && fits(weekday, shift) ? weekday : (openDays[0]?.weekday ?? null);
 
   const roomNames = (c: HourPackage) => c.rooms.map((r) => r.replace(/^Sala /, ''));
   const roomName = (id: number) => combo.rooms[combo.room_ids.indexOf(id)] ?? '';
 
   const preview = useApi(
-    () => (day == null ? Promise.resolve(null) : api.get<ShiftPreview>(`/me/plans/${plan.id}/shift-preview`, { package_id: String(combo.id), room_id: String(roomId), weekday: String(day), shift })),
-    [plan.id, combo.id, roomId, day, shift],
+    () => (day == null ? Promise.resolve(null) : api.get<ShiftPreview>(`/me/plans/${plan.id}/shift-preview`, { package_id: String(combo.id), room_id: String(roomId), weekday: String(day), shift, ...(daily ? { date } : {}) })),
+    [plan.id, combo.id, roomId, day, shift, date],
   );
   const p = preview.data;
   const blockedByCycle = cycle && !cycle.can_renew;
@@ -93,8 +99,13 @@ export function ShiftPicker({ plan, online, busy, onContract }: Props) {
       </section>
 
       <section>
-        <p className="mb-2 text-[11.5px] font-semibold tracking-[0.08em] text-stone uppercase">2 · {immersion ? 'Horário e dia da semana' : 'Turno e dia da semana'}</p>
-        <div role="radiogroup" aria-label="Turno" className={cn('grid gap-2', immersion ? 'grid-cols-2' : 'grid-cols-3')}>
+        <p className="mb-2 text-[11.5px] font-semibold tracking-[0.08em] text-stone uppercase">2 · {daily ? 'Data da diária' : immersion ? 'Horário e dia da semana' : 'Turno e dia da semana'}</p>
+        {daily && (
+          <p className="mb-2.5 rounded-xl bg-sage-dim px-3.5 py-2 text-[12.5px] font-medium text-sage-700">
+            {info.shifts[shift]!.start.replace(':', 'h')} às {info.shifts[shift]!.end.replace(':', 'h')} (15 horas brutas)
+          </p>
+        )}
+        <div role="radiogroup" aria-label="Turno" className={cn('grid gap-2', immersion ? 'grid-cols-2' : 'grid-cols-3', daily && 'hidden')}>
           {shiftKeys.map((s) => (
             <button
               key={s}
@@ -109,7 +120,12 @@ export function ShiftPicker({ plan, online, busy, onContract }: Props) {
             </button>
           ))}
         </div>
-        {!immersion && <p className="mt-1.5 text-[11.5px] text-stone-light">Há uma janela automática de 30 minutos entre a tarde e a noite.</p>}
+        {!immersion && !daily && <p className="mt-1.5 text-[11.5px] text-stone-light">Há uma janela automática de 30 minutos entre a tarde e a noite.</p>}
+        {daily ? (
+          <div className="mt-2.5">
+            <Input label="Data" type="date" min={tomorrow} value={date} onChange={(e) => setDate(e.target.value)} error={date && !dateOk ? (date < tomorrow ? 'Escolha uma data a partir de amanhã.' : 'O espaço não abre nesse dia no horário da diária.') : undefined} />
+          </div>
+        ) : (
         <div className="mt-2.5">
           <Select label="Dia da semana" value={day ?? ''} onChange={(e) => setWeekday(Number(e.target.value))} disabled={openDays.length === 0}>
             {openDays.length === 0 && <option value="">Sem dias disponíveis neste turno</option>}
@@ -117,16 +133,17 @@ export function ShiftPicker({ plan, online, busy, onContract }: Props) {
           </Select>
           {openDays.length === 0 && <p className="mt-1.5 text-[12px] text-stone-light">Este horário está fora do funcionamento do espaço nos dias liberados para o plano. Escolha outro ou fale com a recepção.</p>}
         </div>
+        )}
       </section>
 
       <section>
-        <p className="mb-2 text-[11.5px] font-semibold tracking-[0.08em] text-stone uppercase">3 · Suas {info.sessions} reservas do ciclo</p>
+        <p className="mb-2 text-[11.5px] font-semibold tracking-[0.08em] text-stone uppercase">3 · {daily ? 'Sua reserva' : `Suas ${info.sessions} reservas do ciclo`}</p>
         {blockedByCycle ? (
           <p className="rounded-xl bg-amber-dim px-3.5 py-2.5 text-[12.5px] leading-snug text-ink">
             Você já tem um turno fixo em andamento, com a última reserva em {dmy(cycle!.last_date)}. A renovação abre uma semana antes.
           </p>
         ) : !p ? (
-          <p className="text-[12.5px] text-stone">{preview.loading ? 'Conferindo a agenda…' : preview.error ?? 'Escolha o turno e o dia.'}</p>
+          <p className="text-[12.5px] text-stone">{preview.loading ? 'Conferindo a agenda…' : preview.error ?? (daily ? 'Escolha a data.' : 'Escolha o turno e o dia.')}</p>
         ) : (
           <ul className="flex flex-col gap-1.5" aria-label="Datas do ciclo">
             {p.dates.map((d) => (
@@ -140,7 +157,7 @@ export function ShiftPicker({ plan, online, busy, onContract }: Props) {
             ))}
           </ul>
         )}
-        {p && !p.ok && !blockedByCycle && <p className="mt-2 text-[12px] text-stone">Escolha outro turno, dia ou sala para liberar as {info.sessions} datas.</p>}
+        {p && !p.ok && !blockedByCycle && <p className="mt-2 text-[12px] text-stone">{daily ? 'Escolha outra data ou sala.' : `Escolha outro turno, dia ou sala para liberar as ${info.sessions} datas.`}</p>}
       </section>
 
       {immersion && (
@@ -149,7 +166,7 @@ export function ShiftPicker({ plan, online, busy, onContract }: Props) {
         </p>
       )}
 
-      {!immersion && <section>
+      {!immersion && !daily && <section>
         <button type="button" aria-expanded={partnerOn} onClick={() => setPartnerOn((v) => !v)} className="flex cursor-pointer items-center gap-2 text-[13px] font-semibold text-sage-700">
           <Users size={15} />{partnerOn ? 'Remover parceiro(a) da dupla' : 'Dupla de profissionais parceiros?'}
         </button>
@@ -164,12 +181,12 @@ export function ShiftPicker({ plan, online, busy, onContract }: Props) {
       </section>}
 
       <div className="flex flex-col gap-2 border-t border-ink/8 pt-3.5">
-        <Button className="w-full" loading={busy} disabled={!canContract && online} onClick={() => p && day != null && onContract({ package_id: combo.id, room_id: roomId, weekday: day, shift, partner: !immersion && partnerOn &&partner.email.trim() ? { name: partner.name.trim(), email: partner.email.trim() } : null })}>
-          {!online ? 'Fale com a recepção' : `${verb} · ${fmtMoney(combo.price_cents)}/mês`}
+        <Button className="w-full" loading={busy} disabled={!canContract && online} onClick={() => p && day != null && onContract({ package_id: combo.id, room_id: roomId, weekday: day, shift, ...(daily ? { date } : {}), partner: !immersion && !daily && partnerOn && partner.email.trim() ? { name: partner.name.trim(), email: partner.email.trim() } : null })}>
+          {!online ? 'Fale com a recepção' : `${verb} · ${fmtMoney(combo.price_cents)}${daily ? '' : '/mês'}`}
         </Button>
         <p className="flex items-start gap-2 text-[11.5px] leading-snug text-stone">
           <CalendarCheck size={14} className="mt-0.5 shrink-0 text-sage-700" />
-          Pagamento online seguro, com Pix, cartão ou boleto. Valor fixo por mês ({info.sessions} {immersion ? 'dias' : 'turnos'}, nunca muda com o calendário). O primeiro pagamento é antecipado: ao confirmar, as reservas são criadas sozinhas e você as gerencia em Minhas reservas.
+          {daily ? 'Pagamento online seguro, com Pix, cartão ou boleto. Valor fechado da diária, sem mensalidade. Ao confirmar o pagamento, a reserva é criada sozinha e você a gerencia em Minhas reservas.' : <>Pagamento online seguro, com Pix, cartão ou boleto. Valor fixo por mês ({info.sessions} {immersion ? 'dias' : 'turnos'}, nunca muda com o calendário). O primeiro pagamento é antecipado: ao confirmar, as reservas são criadas sozinhas e você as gerencia em Minhas reservas.</>}
         </p>
       </div>
     </div>

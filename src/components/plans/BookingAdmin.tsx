@@ -128,10 +128,10 @@ export function BookingAdmin({ planId }: { planId: number }) {
             </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          {data.kind !== 'daily' && <div className="grid gap-3 sm:grid-cols-2">
             <Input label="Reservas por ciclo mensal" type="number" min={1} max={12} value={cfg.sessions} onChange={(e) => setCfg({ ...cfg, sessions: Number(e.target.value) })} hint="Ex.: 4 = uma por semana durante 4 semanas." />
             <Input label="Renovação abre (dias antes do fim)" type="number" min={0} max={31} value={cfg.renew_days} onChange={(e) => setCfg({ ...cfg, renew_days: Number(e.target.value) })} hint="Antes disso o cliente não contrata um novo ciclo." />
-          </div>
+          </div>}
         </>
       )}
 

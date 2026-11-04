@@ -23,11 +23,12 @@ export const SHIFTS = {
   full: { label: 'Integral diária', start: '07:00', end: '22:00' },
 };
 /** Opções de horário de cada modalidade (kind do plano). */
-export const SHIFT_SETS = { shift: ['morning', 'afternoon', 'night'], immersion: ['commercial', 'full'] };
-export const isShiftKind = (kind) => kind === 'shift' || kind === 'immersion';
+export const SHIFT_SETS = { shift: ['morning', 'afternoon', 'night'], immersion: ['commercial', 'full'], daily: ['full'] };
+export const isShiftKind = (kind) => kind === 'shift' || kind === 'immersion' || kind === 'daily';
 const MODE_TEXT = {
   shift: { title: 'Turno fixo — Acolhimento Premium', label: 'Turno fixo' },
   immersion: { title: 'Plano Imersão — dia fixo na semana', label: 'Plano Imersão' },
+  daily: { title: 'Diária avulsa — Experiência de diária única', label: 'Diária avulsa' },
 };
 const WEEKDAY_NAMES = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
 export const winMinutes = (win) => toMin(win.end) - toMin(win.start);
@@ -41,7 +42,7 @@ const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
  * `all` traz todas as opções (inclusive as desligadas) para a tela de administração.
  */
 export function shiftConfig(plan) {
-  const mode = plan?.kind === 'immersion' ? 'immersion' : 'shift';
+  const mode = plan?.kind === 'immersion' || plan?.kind === 'daily' ? plan.kind : 'shift';
   let saved = {};
   try { saved = JSON.parse(plan?.booking_config || '{}') ?? {}; } catch { saved = {}; }
   const all = SHIFT_SETS[mode].map((key) => {
@@ -59,7 +60,7 @@ export function shiftConfig(plan) {
   const weekdays = Array.isArray(saved.weekdays) ? saved.weekdays.filter((d) => ALL_DAYS.includes(d)) : ALL_DAYS;
   return {
     mode,
-    sessions: clamp(saved.sessions, 1, 12, SESSIONS),
+    sessions: mode === 'daily' ? 1 : clamp(saved.sessions, 1, 12, SESSIONS), // a diária avulsa é um dia só
     renew_days: clamp(saved.renew_days, 0, 31, 7),
     weekdays,
     all,
@@ -98,6 +99,8 @@ export async function shiftAvailability(cfg = shiftConfig(null)) {
 
 /** Ciclo em andamento de turno fixo: reservas futuras das séries dos turnos já pagos. */
 export async function activeShiftCycle(userId, planId = null, conn = db) {
+  const planRow = planId ? await conn.get('SELECT * FROM plans WHERE id = ?', [planId]) : null;
+  if (planRow?.kind === 'daily') return null; // diária avulsa não tem ciclo: dá para comprar quantas quiser
   const today = nowLocal().date;
   const rows = await conn.query(
     `SELECT p.meta FROM package_purchases p JOIN hour_packages k ON k.id = p.package_id
@@ -115,7 +118,6 @@ export async function activeShiftCycle(userId, planId = null, conn = db) {
   );
   if (!row?.last_date) return null;
   const last = metas[0];
-  const planRow = planId ? await conn.get('SELECT * FROM plans WHERE id = ?', [planId]) : null;
   const renewDays = shiftConfig(planRow).renew_days;
   return {
     last_date: row.last_date,
@@ -128,7 +130,7 @@ export async function activeShiftCycle(userId, planId = null, conn = db) {
 }
 
 /** Datas do ciclo (4 semanas seguidas) e se cada uma está livre. */
-export async function previewShift({ userId, planId, packageId, roomId, weekday, shift }) {
+export async function previewShift({ userId, planId, packageId, roomId, weekday: weekdayIn, shift, date: dateIn = null }) {
   const pkg = await db.get('SELECT * FROM hour_packages WHERE id = ? AND plan_id = ? AND active = 1', [packageId, planId]);
   if (!pkg) throw new HttpError(422, 'Escolha a categoria de sala do seu turno.');
   const cfg = shiftConfig(await db.get('SELECT * FROM plans WHERE id = ?', [planId]));
@@ -137,19 +139,23 @@ export async function previewShift({ userId, planId, packageId, roomId, weekday,
   if (!win) throw new HttpError(422, mode === 'immersion' ? 'Escolha o horário: comercial ou integral.' : 'Escolha o turno disponível.');
   // Na Imersão cada pacote é uma categoria + horário (o preço muda com o horário).
   if (pkg.shift_key && pkg.shift_key !== shift) throw new HttpError(422, 'Esse valor não corresponde ao horário escolhido.');
+  const today = nowLocal().date;
+  const daily = mode === 'daily';
+  // Diária avulsa: o cliente escolhe a data (a partir de amanhã); nos demais, o dia da semana.
+  if (daily && !(/^\d{4}-\d{2}-\d{2}$/.test(dateIn ?? '') && dateIn > today)) throw new HttpError(422, 'Escolha a data da diária, a partir de amanhã.');
+  const weekday = daily ? weekdayOf(dateIn) : weekdayIn;
   if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6) throw new HttpError(422, 'Escolha o dia da semana.');
   if (!cfg.weekdays.includes(weekday)) throw new HttpError(422, 'Este dia da semana não está disponível para o plano.');
   const roomIds = JSON.parse(pkg.room_ids || '[]').map(Number);
   const room = await db.get('SELECT * FROM rooms WHERE id = ? AND active = 1', [roomId]);
   if (!room || (roomIds.length && !roomIds.includes(Number(room.id)))) throw new HttpError(422, 'Escolha uma sala da categoria selecionada.');
 
-  const today = nowLocal().date;
   const cycle = await activeShiftCycle(userId, planId);
   if (cycle && !cycle.can_renew) {
     throw new HttpError(409, `Você já tem um turno fixo em andamento. A renovação abre ${cycle.renew_days} dia${cycle.renew_days === 1 ? '' : 's'} antes da última reserva (${dmy(cycle.last_date)}).`);
   }
   const base = cycle ? addDays(cycle.last_date, 1) : addDays(today, 1);
-  const first = nextWeekday(base, weekday);
+  const first = daily ? dateIn : nextWeekday(base, weekday);
   const hoursList = await getBusinessHours();
   const rules = await getSettings();
   const now = nowLocal();
@@ -173,20 +179,21 @@ export async function previewShift({ userId, planId, packageId, roomId, weekday,
     window: win,
     room: { id: Number(room.id), name: room.name },
     renewal: Boolean(cycle),
+    weekday,
     dates,
     pkg,
   };
 }
 
 /** Contrata o ciclo: confere as 4 datas e abre a cobrança do primeiro pagamento (as reservas saem quando o pagamento confirmar). */
-export async function subscribeShift({ actor, plan, packageId, roomId, weekday, shift, partner = null }) {
-  const p = await previewShift({ userId: actor.id, planId: Number(plan.id), packageId, roomId, weekday, shift });
+export async function subscribeShift({ actor, plan, packageId, roomId, weekday, shift, date = null, partner = null }) {
+  const p = await previewShift({ userId: actor.id, planId: Number(plan.id), packageId, roomId, weekday, shift, date });
   if (!p.ok) {
     const bad = p.dates.filter((d) => !d.ok);
     throw new HttpError(409, `Esse turno não está livre em ${bad.map((d) => dmy(d.date)).join(', ')} (${bad[0].reason}) Escolha outro dia, turno ou sala.`);
   }
   const meta = {
-    kind: 'shift', mode: p.mode, shift_label: p.window.label, room_id: p.room.id, room_name: p.room.name, weekday, shift, start: p.window.start, end: p.window.end,
+    kind: 'shift', mode: p.mode, shift_label: p.window.label, room_id: p.room.id, room_name: p.room.name, weekday: p.weekday, shift, start: p.window.start, end: p.window.end,
     dates: p.dates.map((d) => d.date), partner: partner?.email ? { name: partner.name ?? '', email: partner.email } : null, created: false,
   };
   return purchasePackage({ actor, packageId, viaPlan: true, options: { room_ids: [p.room.id], minutes: p.minutes, meta } });
@@ -214,7 +221,7 @@ export async function processShiftPurchases() {
 
     const today = nowLocal().date;
     let first = meta.dates[0];
-    while (first < today) first = addDays(first, 7); // pagou depois da data prevista: segue para a próxima semana livre
+    while (meta.mode !== 'daily' && first < today) first = addDays(first, 7); // pagou depois da data prevista: segue para a próxima semana livre
     const result = { booked: 0, skipped: [], series_id: null, error: '' };
     try {
       const partner = meta.partner?.email ? [meta.partner] : [];
@@ -235,7 +242,8 @@ export async function processShiftPurchases() {
     }
     await db.run('UPDATE package_purchases SET meta = ? WHERE id = ?', [JSON.stringify({ ...meta, created: true, dates: undefined, first_date: first, ...result }), r.id]);
 
-    // Contrato do cliente (um por sala, dia e turno; a renovação só reabre o mesmo contrato).
+    // Contrato do cliente (um por sala, dia e turno; a renovação só reabre o mesmo contrato). Diária avulsa não vira contrato.
+    if (meta.mode === 'daily') { done += 1; continue; }
     try {
       const key = `shift:${r.user_id}:${meta.room_id}:${meta.weekday}:${meta.shift}`;
       const exists = await db.get('SELECT id FROM contracts WHERE legacy_key = ?', [key]);

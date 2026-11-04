@@ -646,7 +646,7 @@ export type ShiftKey = 'morning' | 'afternoon' | 'night' | 'commercial' | 'full'
 
 export interface ShiftInfo {
   /** 'shift' = Turno Fixo; 'immersion' = Plano Imersão (dia fixo, horário comercial ou integral). */
-  mode: 'shift' | 'immersion';
+  mode: 'shift' | 'immersion' | 'daily';
   shifts: Partial<Record<ShiftKey, { label: string; start: string; end: string }>>;
   /** Para cada dia da semana (0 = domingo), em quais turnos o espaço está aberto. */
   availability: { weekday: number; name: string; shifts: Record<ShiftKey, boolean> }[];

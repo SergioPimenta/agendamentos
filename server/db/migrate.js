@@ -715,6 +715,52 @@ const migrations = [
     id: '032_plan_booking_config',
     statements: () => [`ALTER TABLE plans ADD COLUMN booking_config TEXT NULL`],
   },
+  {
+    id: '033_diaria_avulsa',
+    statements: () => [
+      async (tx) => {
+        if (!Number((await tx.get('SELECT COUNT(*) AS n FROM rooms')).n)) return;
+        if (await tx.get("SELECT id FROM plans WHERE name = 'Diária Avulsa'")) return;
+        await tx.run('UPDATE plans SET sort_order = sort_order + 1 WHERE sort_order >= 4');
+        const features = JSON.stringify([
+          'Experiência de diária única: a sala só sua, das 07h00 às 22h00 (15 horas brutas)',
+          'Você escolhe a data e a sala; sem mensalidade nem fidelidade',
+          'Pagamento antecipado no ato da contratação',
+        ]);
+        const r = await tx.run(
+          `INSERT INTO plans (name, description, included_minutes, unlimited, room_discount_percent, price_cents, active, sort_order, subtitle, icon, price_label, price_note, featured, features, layout, cta_label, contact_only, kind)
+           VALUES ('Diária Avulsa', ?, 0, 0, 0, 0, 1, 4, ?, 'sun', 'A partir de R$ 320,00', '/diária, 07h às 22h', 0, ?, 'card', 'Escolher data', 0, 'daily')`,
+          ['Experiência de diária avulsa única: um dia inteiro na sala, com valor fechado.', 'Diária avulsa · 07h00 às 22h00', features],
+        );
+        const planId = Number(r.insertId);
+        const roomIds = async (slugs) => {
+          const out = [];
+          for (const slug of slugs) {
+            const room = await tx.get('SELECT id FROM rooms WHERE slug = ? OR slug = ?', [slug, `sala-${slug}`]);
+            if (room) out.push(Number(room.id));
+          }
+          return out;
+        };
+        const cats = [
+          { name: 'Brisa', sub: 'Sala Brisa', slugs: ['brisa'], cents: 32000 },
+          { name: 'Flor', sub: 'Sala Flor', slugs: ['flor'], cents: 39000 },
+          { name: 'Premium Maca', sub: 'Salas Sol e Terra', slugs: ['sol', 'terra'], cents: 45000 },
+          { name: 'Premium Poltrona', sub: 'Salas Mar e Árvore', slugs: ['mar', 'arvore'], cents: 51000 },
+          { name: 'Cachoeira', sub: 'Sala Cachoeira', slugs: ['cachoeira'], cents: 62000 },
+        ];
+        let order = 300;
+        for (const c of cats) {
+          order += 1;
+          const ids = await roomIds(c.slugs);
+          await tx.run(
+            `INSERT INTO hour_packages (name, subtitle, description, minutes, price_cents, validity_days, icon, featured, features, active, sort_order, room_ids, plan_id, created_at)
+             VALUES (?, ?, ?, 900, ?, 35, 'sun', 0, '[]', 1, ?, ?, ?, ?)`,
+            [`Diária Avulsa · ${c.name}`, c.sub, 'Categoria da Diária Avulsa: um dia, 07h às 22h.', c.cents, order, ids.length ? JSON.stringify(ids) : null, planId, nowStamp()],
+          );
+        }
+      },
+    ],
+  },
 ];
 
 /**

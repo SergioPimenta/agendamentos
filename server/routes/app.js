@@ -549,12 +549,13 @@ router.get(
         room_id: z.coerce.number().int().positive(),
         weekday: z.coerce.number().int().min(0).max(6),
         shift: z.enum(['morning', 'afternoon', 'night', 'commercial', 'full']),
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), // diária avulsa: a data escolhida
       }),
       req.query,
     );
-    const plan = await db.get("SELECT id FROM plans WHERE id = ? AND active = 1 AND kind IN ('shift', 'immersion')", [planId]);
+    const plan = await db.get("SELECT id FROM plans WHERE id = ? AND active = 1 AND kind IN ('shift', 'immersion', 'daily')", [planId]);
     if (!plan) throw new HttpError(404, 'Plano não encontrado.');
-    const { pkg: _pkg, ...preview } = await previewShift({ userId: req.user.id, planId, packageId: q.package_id, roomId: q.room_id, weekday: q.weekday, shift: q.shift });
+    const { pkg: _pkg, ...preview } = await previewShift({ userId: req.user.id, planId, packageId: q.package_id, roomId: q.room_id, weekday: q.weekday, shift: q.shift, date: q.date ?? null });
     res.json(preview);
   }),
 );
@@ -572,11 +573,12 @@ router.post(
         room_id: z.coerce.number().int().positive().optional(),
         weekday: z.coerce.number().int().min(0).max(6).optional(),
         shift: z.enum(['morning', 'afternoon', 'night', 'commercial', 'full']).optional(),
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
         partner: z.object({ name: z.string().trim().max(120).optional().default(''), email: z.string().trim().toLowerCase().email('E-mail do parceiro inválido').max(160) }).nullable().optional(),
       }),
       req.body ?? {},
     );
-    const shift = body.room_id != null && body.weekday != null && body.shift ? { room_id: body.room_id, weekday: body.weekday, shift: body.shift, partner: body.partner ?? null } : null;
+    const shift = body.room_id != null && body.weekday != null && body.shift ? { room_id: body.room_id, weekday: body.weekday, shift: body.shift, date: body.date ?? null, partner: body.partner ?? null } : null;
     res.status(201).json(await subscribeToPlan({ actor: req.user, planId, packageId: body.package_id ?? null, shift }));
   }),
 );

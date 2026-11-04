@@ -98,7 +98,7 @@ export async function subscribeToPlan({ actor, planId, packageId = null, shift =
   // Turno Fixo: sala, dia da semana e turno escolhidos; as reservas saem quando o primeiro pagamento confirmar.
   if (isShiftKind(plan.kind)) {
     if (!shift) throw new HttpError(422, 'Escolha a sala, o dia da semana e o turno.');
-    return { activated: false, ...(await subscribeShift({ actor, plan, packageId: Number(packageId), roomId: Number(shift.room_id), weekday: Number(shift.weekday), shift: shift.shift, partner: shift.partner ?? null })) };
+    return { activated: false, ...(await subscribeShift({ actor, plan, packageId: Number(packageId), roomId: Number(shift.room_id), weekday: Number(shift.weekday), shift: shift.shift, date: shift.date ?? null, partner: shift.partner ?? null })) };
   }
 
   // Plano com combos (Plano Raiz): contrata-se um combo por ciclo de 30 dias, na categoria de sala escolhida. Pode renovar quando o ciclo acabar.

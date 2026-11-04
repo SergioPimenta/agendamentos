@@ -44,7 +44,7 @@ export default function PlansPage() {
   const refreshUser = () => api.get<{ user: User }>('/auth/me').then((r) => setUser(r.user)).catch(() => {});
 
   // Turno Fixo: contrata com a sala, o dia e o turno escolhidos (as reservas saem quando o pagamento confirmar).
-  const contractShift = async (p: ClientPlan, body: { package_id: number; room_id: number; weekday: number; shift: string; partner: { name: string; email: string } | null }) => {
+  const contractShift = async (p: ClientPlan, body: { package_id: number; room_id: number; weekday: number; shift: string; date?: string; partner: { name: string; email: string } | null }) => {
     setBusy(p.id);
     try {
       const r = await api.post<{ payment?: OnlinePayment }>(`/me/plans/${p.id}/subscribe`, body);
