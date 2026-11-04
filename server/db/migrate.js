@@ -529,6 +529,27 @@ const migrations = [
       `CREATE INDEX idx_contracts_legacy ON contracts (legacy_key)`,
     ],
   },
+  {
+    // Novo valor-base por hora (avulso) de cada sala. Reservas já feitas mantêm o valor com que foram criadas.
+    id: '028_room_base_prices',
+    statements: () => [
+      async (tx) => {
+        const prices = [
+          { cents: 3140, slugs: ['brisa', 'sala-brisa'], names: ['Sala Brisa'] }, // Brisa
+          { cents: 3860, slugs: ['flor', 'sala-flor'], names: ['Sala Flor'] }, // Flor
+          { cents: 4400, slugs: ['sol', 'sala-sol', 'terra', 'sala-terra'], names: ['Sala Sol', 'Sala Terra'] }, // Premium (maca): Sol e Terra
+          { cents: 4950, slugs: ['mar', 'sala-mar', 'arvore', 'sala-arvore'], names: ['Sala Mar', 'Sala Árvore', 'Sala Arvore'] }, // Premium (poltronas): Mar e Árvore
+          { cents: 6020, slugs: ['cachoeira', 'sala-cachoeira'], names: ['Sala Cachoeira'] }, // Cachoeira
+        ];
+        for (const p of prices) {
+          await tx.run(
+            `UPDATE rooms SET price_cents = ? WHERE slug IN (${p.slugs.map(() => '?').join(', ')}) OR name IN (${p.names.map(() => '?').join(', ')})`,
+            [p.cents, ...p.slugs, ...p.names],
+          );
+        }
+      },
+    ],
+  },
 ];
 
 /**
