@@ -2,7 +2,7 @@ import { db } from '../db/index.js';
 import { HttpError } from '../utils/http.js';
 import { nowLocal, nowStamp } from '../utils/time.js';
 import { createCharge } from './onlinePayments.js';
-import { SESSIONS, SHIFTS, activeShiftCycle, shiftAvailability, subscribeShift } from './fixedShift.js';
+import { SESSIONS, SHIFTS, SHIFT_SETS, activeShiftCycle, isShiftKind, shiftAvailability, subscribeShift } from './fixedShift.js';
 import { activeComboCycle, presentPackage, purchasePackage, roomNameMap } from './packages.js';
 import { getSettings, onlinePaymentsReady } from './settings.js';
 
@@ -65,18 +65,22 @@ export async function plansForClient(userId) {
   // Planos com combos (ex.: Plano Raiz): o cliente escolhe a categoria de sala; cada combo é um pacote de horas do plano.
   const comboRows = await db.query('SELECT * FROM hour_packages WHERE active = 1 AND plan_id IS NOT NULL ORDER BY sort_order, id');
   const names = comboRows.length ? await roomNameMap() : null;
-  const hasShift = rows.some((p) => p.kind === 'shift');
-  const shiftInfo = hasShift ? { shifts: SHIFTS, availability: await shiftAvailability(), sessions: SESSIONS } : null;
+  const hasShift = rows.some((p) => isShiftKind(p.kind));
+  const availability = hasShift ? await shiftAvailability() : [];
   const result = [];
   for (const p of rows) {
     const combos = comboRows.filter((c) => Number(c.plan_id) === Number(p.id));
-    const isShift = p.kind === 'shift';
+    const isShift = isShiftKind(p.kind);
+    const mode = p.kind === 'immersion' ? 'immersion' : 'shift';
+    const keys = SHIFT_SETS[mode];
     result.push({
       ...presentPlan(p),
       combos: combos.map((c) => presentPackage(c, names)),
       combo_cycle: combos.length && !isShift ? await activeComboCycle(userId, db, p.id) : null,
       // Turno fixo: horários dos turnos, dias em que cada um cabe e o ciclo em andamento (para renovar).
-      shift: isShift ? { ...shiftInfo, cycle: await activeShiftCycle(userId, Number(p.id)) } : null,
+      shift: isShift
+        ? { mode, shifts: Object.fromEntries(keys.map((k) => [k, SHIFTS[k]])), availability, sessions: SESSIONS, cycle: await activeShiftCycle(userId, Number(p.id)) }
+        : null,
     });
   }
   return {
@@ -95,7 +99,7 @@ export async function subscribeToPlan({ actor, planId, packageId = null, shift =
   if (Number(plan.contact_only)) throw new HttpError(422, 'Este plano é contratado com a recepção. Fale com a gente pelo WhatsApp.');
 
   // Turno Fixo: sala, dia da semana e turno escolhidos; as reservas saem quando o primeiro pagamento confirmar.
-  if (plan.kind === 'shift') {
+  if (isShiftKind(plan.kind)) {
     if (!shift) throw new HttpError(422, 'Escolha a sala, o dia da semana e o turno.');
     return { activated: false, ...(await subscribeShift({ actor, plan, packageId: Number(packageId), roomId: Number(shift.room_id), weekday: Number(shift.weekday), shift: shift.shift, partner: shift.partner ?? null })) };
   }

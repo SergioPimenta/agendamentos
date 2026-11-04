@@ -493,6 +493,8 @@ export interface HourPackage {
   id: number;
   /** Plano ao qual o pacote pertence (combo); null = pacote avulso do catálogo. */
   plan_id: number | null;
+  /** Horário do combo (Plano Imersão); null nos demais. */
+  shift_key?: ShiftKey | null;
   name: string;
   subtitle: string;
   description: string;
@@ -640,10 +642,12 @@ export interface PaymentConfig {
   hold_minutes: number;
 }
 
-export type ShiftKey = 'morning' | 'afternoon' | 'night';
+export type ShiftKey = 'morning' | 'afternoon' | 'night' | 'commercial' | 'full';
 
 export interface ShiftInfo {
-  shifts: Record<ShiftKey, { label: string; start: string; end: string }>;
+  /** 'shift' = Turno Fixo; 'immersion' = Plano Imersão (dia fixo, horário comercial ou integral). */
+  mode: 'shift' | 'immersion';
+  shifts: Partial<Record<ShiftKey, { label: string; start: string; end: string }>>;
   /** Para cada dia da semana (0 = domingo), em quais turnos o espaço está aberto. */
   availability: { weekday: number; name: string; shifts: Record<ShiftKey, boolean> }[];
   sessions: number;

@@ -548,11 +548,11 @@ router.get(
         package_id: z.coerce.number().int().positive(),
         room_id: z.coerce.number().int().positive(),
         weekday: z.coerce.number().int().min(0).max(6),
-        shift: z.enum(['morning', 'afternoon', 'night']),
+        shift: z.enum(['morning', 'afternoon', 'night', 'commercial', 'full']),
       }),
       req.query,
     );
-    const plan = await db.get("SELECT id FROM plans WHERE id = ? AND active = 1 AND kind = 'shift'", [planId]);
+    const plan = await db.get("SELECT id FROM plans WHERE id = ? AND active = 1 AND kind IN ('shift', 'immersion')", [planId]);
     if (!plan) throw new HttpError(404, 'Plano não encontrado.');
     const { pkg: _pkg, ...preview } = await previewShift({ userId: req.user.id, planId, packageId: q.package_id, roomId: q.room_id, weekday: q.weekday, shift: q.shift });
     res.json(preview);
@@ -571,7 +571,7 @@ router.post(
         // Turno fixo: sala, dia da semana (0 = domingo), turno e, se quiser, o(a) parceiro(a) da dupla (recebe o convite das reservas).
         room_id: z.coerce.number().int().positive().optional(),
         weekday: z.coerce.number().int().min(0).max(6).optional(),
-        shift: z.enum(['morning', 'afternoon', 'night']).optional(),
+        shift: z.enum(['morning', 'afternoon', 'night', 'commercial', 'full']).optional(),
         partner: z.object({ name: z.string().trim().max(120).optional().default(''), email: z.string().trim().toLowerCase().email('E-mail do parceiro inválido').max(160) }).nullable().optional(),
       }),
       req.body ?? {},

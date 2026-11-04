@@ -659,6 +659,57 @@ const migrations = [
       },
     ],
   },
+  {
+    id: '031_plano_imersao',
+    statements: () => [
+      `ALTER TABLE hour_packages ADD COLUMN shift_key VARCHAR(16) NULL`,
+      async (tx) => {
+        if (!Number((await tx.get('SELECT COUNT(*) AS n FROM rooms')).n)) return;
+        if (await tx.get("SELECT id FROM plans WHERE name = 'Plano Imersão'")) return;
+        await tx.run('UPDATE plans SET sort_order = sort_order + 1 WHERE sort_order >= 3');
+        const features = JSON.stringify([
+          'Um dia fixo na semana, todas as semanas, com fechamento mensal pago na contratação',
+          'Opção A · Horário comercial: 07h30 às 18h30',
+          'Opção B · Integral diária: 07h00 às 22h00',
+          'Valor mensal fechado, independe do número de semanas do mês',
+          'Permitido compartilhamento com +2 profissionais parceiros',
+        ]);
+        const r = await tx.run(
+          `INSERT INTO plans (name, description, included_minutes, unlimited, room_discount_percent, price_cents, active, sort_order, subtitle, icon, price_label, price_note, featured, features, layout, cta_label, contact_only, kind)
+           VALUES ('Plano Imersão', ?, 0, 0, 0, 0, 1, 3, ?, 'mountain', 'A partir de R$ 920,00', '/mês, 1 dia fixo por semana', 0, ?, 'card', 'Escolher dia e horário', 0, 'immersion')`,
+          ['A sala inteira no seu dia fixo da semana, em horário comercial ou o dia todo, com valor mensal fechado.', 'Dia fixo na semana · fechamento mensal', features],
+        );
+        const planId = Number(r.insertId);
+        const roomIds = async (slugs) => {
+          const out = [];
+          for (const slug of slugs) {
+            const room = await tx.get('SELECT id FROM rooms WHERE slug = ? OR slug = ?', [slug, `sala-${slug}`]);
+            if (room) out.push(Number(room.id));
+          }
+          return out;
+        };
+        const cats = [
+          { name: 'Brisa', sub: 'Sala Brisa', slugs: ['brisa'], commercial: 92000, full: 112000 },
+          { name: 'Flor', sub: 'Sala Flor', slugs: ['flor'], commercial: 113000, full: 138000 },
+          { name: 'Premium Maca', sub: 'Salas Sol e Terra', slugs: ['sol', 'terra'], commercial: 129000, full: 157000 },
+          { name: 'Premium Poltrona', sub: 'Salas Mar e Árvore', slugs: ['mar', 'arvore'], commercial: 145000, full: 176500 },
+          { name: 'Cachoeira', sub: 'Sala Cachoeira', slugs: ['cachoeira'], commercial: 176500, full: 215000 },
+        ];
+        let order = 200;
+        for (const c of cats) {
+          const ids = await roomIds(c.slugs);
+          for (const [key, label, minutes] of [['commercial', 'Comercial', 2640], ['full', 'Integral', 3600]]) {
+            order += 1;
+            await tx.run(
+              `INSERT INTO hour_packages (name, subtitle, description, minutes, price_cents, validity_days, icon, featured, features, active, sort_order, room_ids, plan_id, shift_key, created_at)
+               VALUES (?, ?, ?, ?, ?, 35, 'mountain', 0, '[]', 1, ?, ?, ?, ?, ?)`,
+              [`Imersão ${label} · ${c.name}`, c.sub, `Categoria do Plano Imersão (${label.toLowerCase()}): valor mensal para um dia fixo por semana.`, minutes, c[key], order, ids.length ? JSON.stringify(ids) : null, planId, key, nowStamp()],
+            );
+          }
+        }
+      },
+    ],
+  },
 ];
 
 /**

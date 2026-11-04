@@ -18,6 +18,16 @@ export const SHIFTS = {
   morning: { label: 'Manhã', start: '07:30', end: '12:00' },
   afternoon: { label: 'Tarde', start: '13:00', end: '17:30' },
   night: { label: 'Noite', start: '18:00', end: '22:00' },
+  // Plano Imersão: dia fixo na semana, em horário comercial ou o dia todo.
+  commercial: { label: 'Horário comercial', start: '07:30', end: '18:30' },
+  full: { label: 'Integral diária', start: '07:00', end: '22:00' },
+};
+/** Opções de horário de cada modalidade (kind do plano). */
+export const SHIFT_SETS = { shift: ['morning', 'afternoon', 'night'], immersion: ['commercial', 'full'] };
+export const isShiftKind = (kind) => kind === 'shift' || kind === 'immersion';
+const MODE_TEXT = {
+  shift: { title: 'Turno fixo — Acolhimento Premium', label: 'Turno fixo' },
+  immersion: { title: 'Plano Imersão — dia fixo na semana', label: 'Plano Imersão' },
 };
 const WEEKDAY_NAMES = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
 export const shiftMinutes = (key) => toMin(SHIFTS[key].end) - toMin(SHIFTS[key].start);
@@ -82,8 +92,12 @@ export async function activeShiftCycle(userId, planId = null, conn = db) {
 export async function previewShift({ userId, planId, packageId, roomId, weekday, shift }) {
   const pkg = await db.get('SELECT * FROM hour_packages WHERE id = ? AND plan_id = ? AND active = 1', [packageId, planId]);
   if (!pkg) throw new HttpError(422, 'Escolha a categoria de sala do seu turno.');
-  const win = SHIFTS[shift];
-  if (!win) throw new HttpError(422, 'Escolha o turno: manhã, tarde ou noite.');
+  const planRow = await db.get('SELECT kind FROM plans WHERE id = ?', [planId]);
+  const mode = planRow?.kind === 'immersion' ? 'immersion' : 'shift';
+  const win = SHIFT_SETS[mode].includes(shift) ? SHIFTS[shift] : null;
+  if (!win) throw new HttpError(422, mode === 'immersion' ? 'Escolha o horário: comercial ou integral.' : 'Escolha o turno: manhã, tarde ou noite.');
+  // Na Imersão cada pacote é uma categoria + horário (o preço muda com o horário).
+  if (pkg.shift_key && pkg.shift_key !== shift) throw new HttpError(422, 'Esse valor não corresponde ao horário escolhido.');
   if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6) throw new HttpError(422, 'Escolha o dia da semana.');
   const roomIds = JSON.parse(pkg.room_ids || '[]').map(Number);
   const room = await db.get('SELECT * FROM rooms WHERE id = ? AND active = 1', [roomId]);
@@ -115,6 +129,7 @@ export async function previewShift({ userId, planId, packageId, roomId, weekday,
     ok: dates.every((d) => d.ok),
     amount_cents: Number(pkg.price_cents),
     minutes: SESSIONS * shiftMinutes(shift),
+    mode,
     window: win,
     room: { id: Number(room.id), name: room.name },
     renewal: Boolean(cycle),
@@ -131,7 +146,7 @@ export async function subscribeShift({ actor, plan, packageId, roomId, weekday, 
     throw new HttpError(409, `Esse turno não está livre em ${bad.map((d) => dmy(d.date)).join(', ')} (${bad[0].reason}) Escolha outro dia, turno ou sala.`);
   }
   const meta = {
-    kind: 'shift', room_id: p.room.id, room_name: p.room.name, weekday, shift, start: p.window.start, end: p.window.end,
+    kind: 'shift', mode: p.mode, room_id: p.room.id, room_name: p.room.name, weekday, shift, start: p.window.start, end: p.window.end,
     dates: p.dates.map((d) => d.date), partner: partner?.email ? { name: partner.name ?? '', email: partner.email } : null, created: false,
   };
   return purchasePackage({ actor, packageId, viaPlan: true, options: { room_ids: [p.room.id], minutes: p.minutes, meta } });
@@ -150,6 +165,7 @@ export async function processShiftPurchases() {
   for (const r of rows) {
     const meta = parseMeta(r.meta);
     if (!meta) continue;
+    const text = MODE_TEXT[meta.mode] ?? MODE_TEXT.shift;
     // Só uma execução por compra: marca como "em andamento" com troca condicionada ao texto original.
     const claim = await db.run('UPDATE package_purchases SET meta = ? WHERE id = ? AND meta = ?', [JSON.stringify({ ...meta, created: true, booked: 0 }), r.id, r.meta]);
     if (!claim.changes) continue;
@@ -164,7 +180,7 @@ export async function processShiftPurchases() {
         actor: { id: Number(r.user_id), role: 'admin' },
         input: {
           user_id: Number(r.user_id), room_id: meta.room_id, date: first, start_time: meta.start, end_time: meta.end, attendees: partner.length ? 2 : 1,
-          title: 'Turno fixo — Acolhimento Premium', notes: `Turno fixo ${SHIFTS[meta.shift].label.toLowerCase()} (${meta.start} às ${meta.end}), ${WEEKDAY_NAMES[meta.weekday]}.`,
+          title: text.title, notes: `${text.label} ${SHIFTS[meta.shift].label.toLowerCase()} (${meta.start} às ${meta.end}), ${WEEKDAY_NAMES[meta.weekday]}.`,
           repeat_weeks: SESSIONS - 1, skip_conflicts: true, guests: partner,
         },
       });
@@ -184,7 +200,7 @@ export async function processShiftPurchases() {
       if (exists) await db.run('UPDATE contracts SET active = 1, end_date = NULL, amount_cents = ?, updated_at = ? WHERE id = ?', [Number(r.price_cents), nowStamp(), exists.id]);
       else {
         await createContract(Number(r.user_id), {
-          kind: `Turno fixo · ${SHIFTS[meta.shift].label} · ${meta.room_name}`, unit: 'Coworking Harmonize o Ser', period: 'Mensal', signed_at: null, start_date: first, end_date: null,
+          kind: `${text.label} · ${SHIFTS[meta.shift].label} · ${meta.room_name}`, unit: 'Coworking Harmonize o Ser', period: 'Mensal', signed_at: null, start_date: first, end_date: null,
           fidelity_until: null, amount_cents: Number(r.price_cents), due_day: Number(today.slice(8, 10)), private_office: '', created_by_name: 'Sistema (contratação pelo app)',
           last_adjustment: null, adjustment_index: '', active: true,
           notes: `${WEEKDAY_NAMES[meta.weekday]}, ${meta.start} às ${meta.end}${meta.partner ? `. Parceiro(a): ${meta.partner.name || meta.partner.email}` : ''}.`,

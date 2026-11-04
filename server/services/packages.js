@@ -51,6 +51,7 @@ export async function packageClientNames(rows, conn = db) {
 export const presentPackage = (p, names = null, clientNames = null) => ({
   plan_id: p.plan_id == null ? null : Number(p.plan_id), // combo de um plano (só aparece dentro do plano)
   room_ids: idList(p.room_ids),
+  shift_key: p.shift_key ?? null, // horário do combo (Plano Imersão: comercial ou integral)
   rooms: roomNamesOf(idList(p.room_ids), names),
   client_ids: idList(p.client_ids),
   clients: clientNames ? idList(p.client_ids).map((id) => ({ id, name: clientNames.get(id) ?? 'Cliente removido' })) : [],

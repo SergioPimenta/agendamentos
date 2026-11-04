@@ -8,7 +8,6 @@ import { Button } from '../ui/Button';
 import { Input, Select } from '../ui/Form';
 import type { ClientPlan, HourPackage, ShiftKey, ShiftPreview } from '../../types';
 
-const SHIFT_ORDER: ShiftKey[] = ['morning', 'afternoon', 'night'];
 const dmy = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 
 interface Props {
@@ -25,13 +24,16 @@ interface Props {
 export function ShiftPicker({ plan, online, busy, onContract }: Props) {
   const info = plan.shift!;
   const cycle = info.cycle;
-  const combos = plan.combos;
+  const immersion = info.mode === 'immersion';
+  const shiftKeys = Object.keys(info.shifts) as ShiftKey[];
+  const [shift, setShift] = useState<ShiftKey>(cycle?.slot.shift ?? shiftKeys[0]);
+  // Na Imersão cada categoria tem um valor por horário: mostra só os do horário escolhido, mantendo a categoria (pelo subtítulo).
+  const combos = immersion ? plan.combos.filter((c) => c.shift_key === shift) : plan.combos;
   const startCombo = (cycle && combos.find((c) => c.room_ids.includes(cycle.slot.room_id))) || combos[0];
 
-  const [comboId, setComboId] = useState(startCombo.id);
-  const combo: HourPackage = combos.find((c) => c.id === comboId) ?? combos[0];
+  const [catKey, setCatKey] = useState(startCombo.subtitle);
+  const combo: HourPackage = combos.find((c) => c.subtitle === catKey) ?? combos[0];
   const [roomId, setRoomId] = useState<number>(cycle?.slot.room_id ?? combo.room_ids[0]);
-  const [shift, setShift] = useState<ShiftKey>(cycle?.slot.shift ?? 'morning');
   const [weekday, setWeekday] = useState<number | null>(cycle?.slot.weekday ?? null);
   const [partnerOn, setPartnerOn] = useState(false);
   const [partner, setPartner] = useState({ name: '', email: '' });
@@ -70,11 +72,11 @@ export function ShiftPicker({ plan, online, busy, onContract }: Props) {
               type="button"
               role="radio"
               aria-checked={c.id === combo.id}
-              onClick={() => setComboId(c.id)}
+              onClick={() => setCatKey(c.subtitle)}
               className={cn('flex cursor-pointer items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-left transition-colors', c.id === combo.id ? 'border-sage-700 bg-sage-dim' : 'border-ink/12 hover:border-ink/30')}
             >
               <span className="min-w-0">
-                <span className="block truncate text-[13.5px] font-semibold">{c.name.replace('Turno Fixo · ', '')}</span>
+                <span className="block truncate text-[13.5px] font-semibold">{c.name.split(' · ').pop()}</span>
                 {c.rooms.length > 1 && <span className="block truncate text-[12px] text-stone">{roomNames(c).join(' e ')}</span>}
               </span>
               <span className="shrink-0 font-display text-[15px] font-medium">{fmtMoney(c.price_cents)}<span className="text-[11px] font-normal text-stone">/mês</span></span>
@@ -91,9 +93,9 @@ export function ShiftPicker({ plan, online, busy, onContract }: Props) {
       </section>
 
       <section>
-        <p className="mb-2 text-[11.5px] font-semibold tracking-[0.08em] text-stone uppercase">2 · Turno e dia da semana</p>
-        <div role="radiogroup" aria-label="Turno" className="grid grid-cols-3 gap-2">
-          {SHIFT_ORDER.map((s) => (
+        <p className="mb-2 text-[11.5px] font-semibold tracking-[0.08em] text-stone uppercase">2 · {immersion ? 'Horário e dia da semana' : 'Turno e dia da semana'}</p>
+        <div role="radiogroup" aria-label="Turno" className={cn('grid gap-2', immersion ? 'grid-cols-2' : 'grid-cols-3')}>
+          {shiftKeys.map((s) => (
             <button
               key={s}
               type="button"
@@ -102,12 +104,12 @@ export function ShiftPicker({ plan, online, busy, onContract }: Props) {
               onClick={() => setShift(s)}
               className={cn('cursor-pointer rounded-xl border px-2 py-2 text-center transition-colors', s === shift ? 'border-sage-700 bg-sage-dim' : 'border-ink/12 hover:border-ink/30')}
             >
-              <span className="block text-[13px] font-semibold">{info.shifts[s].label}</span>
-              <span className="block text-[11px] text-stone">{info.shifts[s].start.replace(':', 'h')} às {info.shifts[s].end.replace(':', 'h')}</span>
+              <span className="block text-[13px] font-semibold">{info.shifts[s]!.label}</span>
+              <span className="block text-[11px] text-stone">{info.shifts[s]!.start.replace(':', 'h')} às {info.shifts[s]!.end.replace(':', 'h')}</span>
             </button>
           ))}
         </div>
-        <p className="mt-1.5 text-[11.5px] text-stone-light">Há uma janela automática de 30 minutos entre a tarde e a noite.</p>
+        {!immersion && <p className="mt-1.5 text-[11.5px] text-stone-light">Há uma janela automática de 30 minutos entre a tarde e a noite.</p>}
         <div className="mt-2.5">
           <Select label="Dia da semana" value={day ?? ''} onChange={(e) => setWeekday(Number(e.target.value))} disabled={openDays.length === 0}>
             {openDays.length === 0 && <option value="">Sem dias disponíveis neste turno</option>}
@@ -140,7 +142,13 @@ export function ShiftPicker({ plan, online, busy, onContract }: Props) {
         {p && !p.ok && !blockedByCycle && <p className="mt-2 text-[12px] text-stone">Escolha outro turno, dia ou sala para liberar as {info.sessions} datas.</p>}
       </section>
 
-      <section>
+      {immersion && (
+        <p className="flex items-center gap-2 rounded-xl bg-sage-dim px-3.5 py-2.5 text-[12.5px] font-medium text-sage-700">
+          <Users size={15} className="shrink-0" />Permitido compartilhamento com +2 profissionais parceiros
+        </p>
+      )}
+
+      {!immersion && <section>
         <button type="button" aria-expanded={partnerOn} onClick={() => setPartnerOn((v) => !v)} className="flex cursor-pointer items-center gap-2 text-[13px] font-semibold text-sage-700">
           <Users size={15} />{partnerOn ? 'Remover parceiro(a) da dupla' : 'Dupla de profissionais parceiros?'}
         </button>
@@ -152,15 +160,15 @@ export function ShiftPicker({ plan, online, busy, onContract }: Props) {
         ) : (
           <p className="mt-1 text-[11.5px] text-stone-light">Opcional. A fatura única é emitida para você, titular do contrato.</p>
         )}
-      </section>
+      </section>}
 
       <div className="flex flex-col gap-2 border-t border-ink/8 pt-3.5">
-        <Button className="w-full" loading={busy} disabled={!canContract && online} onClick={() => p && day != null && onContract({ package_id: combo.id, room_id: roomId, weekday: day, shift, partner: partnerOn && partner.email.trim() ? { name: partner.name.trim(), email: partner.email.trim() } : null })}>
+        <Button className="w-full" loading={busy} disabled={!canContract && online} onClick={() => p && day != null && onContract({ package_id: combo.id, room_id: roomId, weekday: day, shift, partner: !immersion && partnerOn &&partner.email.trim() ? { name: partner.name.trim(), email: partner.email.trim() } : null })}>
           {!online ? 'Fale com a recepção' : `${verb} · ${fmtMoney(combo.price_cents)}/mês`}
         </Button>
         <p className="flex items-start gap-2 text-[11.5px] leading-snug text-stone">
           <CalendarCheck size={14} className="mt-0.5 shrink-0 text-sage-700" />
-          Valor fixo por mês ({info.sessions} turnos, nunca muda com o calendário). O primeiro pagamento é antecipado: ao confirmar, as reservas são criadas sozinhas e você as gerencia em Minhas reservas.
+          Valor fixo por mês ({info.sessions} {immersion ? 'dias' : 'turnos'}, nunca muda com o calendário). O primeiro pagamento é antecipado: ao confirmar, as reservas são criadas sozinhas e você as gerencia em Minhas reservas.
         </p>
       </div>
     </div>
