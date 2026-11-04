@@ -84,6 +84,44 @@ before(async () => {
 });
 after(() => { server.close(); mock.close(); });
 
+describe('Administração das regras de contratação', () => {
+  it('a administração ajusta turnos, dias, ciclo e categorias, e o cliente vê o novo desenho', async () => {
+    const admin = (await call('POST', '/auth/login', { body: { email: 'admin@harmonizeoser.com.br', password: 'senha-admin-123' } })).body.token;
+    const view = await call('GET', `/admin/plans/${plan.id}/booking`, { token: admin });
+    assert.equal(view.status, 200);
+    assert.equal(view.body.shift_plan, true);
+    assert.equal(view.body.categories.length, 10);
+    assert.equal(view.body.config.sessions, 4);
+    assert.equal((await call('GET', `/admin/plans/${plan.id}/booking`, { token: client })).status, 403);
+
+    const cats = view.body.categories.map((c) => ({
+      id: c.id, name: c.name, subtitle: c.subtitle, room_ids: c.room_ids, price_cents: c.id === view.body.categories[0].id ? 95000 : c.price_cents, shift_key: c.shift_key, active: c.active,
+    }));
+    const config = { sessions: 5, renew_days: 3, weekdays: [1, 2, 3, 4], shifts: view.body.config.shifts.map((s) => (s.key === 'commercial' ? { ...s, label: 'Comercial', end: '18:00' } : s)) };
+    const bad = await call('PUT', `/admin/plans/${plan.id}/booking`, { token: admin, body: { config: { ...config, weekdays: [] }, categories: cats } });
+    assert.equal(bad.status, 422);
+    const saved = await call('PUT', `/admin/plans/${plan.id}/booking`, { token: admin, body: { config, categories: cats } });
+    assert.equal(saved.status, 200);
+    assert.equal(saved.body.categories[0].price_cents, 95000);
+    assert.equal(saved.body.categories[0].minutes, 5 * 630); // 5 reservas × 10h30
+
+    const now = (await call('GET', '/me/plans', { token: client })).body.plans.find((p) => p.id === plan.id);
+    assert.equal(now.shift.sessions, 5);
+    assert.deepEqual(now.shift.shifts.commercial, { label: 'Comercial', start: '07:30', end: '18:00' });
+    assert.deepEqual(now.shift.availability.filter((a) => a.shifts.commercial).map((a) => a.weekday), [1, 2, 3, 4]);
+    const sexta = await preview({ package_id: now.combos[0].id, room_id: brisaRoom.id, weekday: FRIDAY, shift: 'commercial' });
+    assert.equal(sexta.status, 422); // sexta não é mais permitida
+    const terca = await preview({ package_id: now.combos[0].id, room_id: brisaRoom.id, weekday: 2, shift: 'commercial' });
+    assert.equal(terca.body.dates.length, 5);
+    assert.equal(terca.body.amount_cents, 95000);
+
+    // Volta ao padrão para os testes seguintes.
+    const reset = { sessions: 4, renew_days: 7, weekdays: [0, 1, 2, 3, 4, 5, 6], shifts: view.body.config.shifts };
+    const back = view.body.categories.map((c) => ({ id: c.id, name: c.name, subtitle: c.subtitle, room_ids: c.room_ids, price_cents: c.price_cents, shift_key: c.shift_key, active: c.active }));
+    assert.equal((await call('PUT', `/admin/plans/${plan.id}/booking`, { token: admin, body: { config: reset, categories: back } })).status, 200);
+  });
+});
+
 describe('Plano Imersão (dia fixo na semana)', () => {
   it('oferece horário comercial e integral, com o valor mensal de cada categoria', () => {
     assert.equal(plan.kind, 'immersion');

@@ -654,6 +654,20 @@ export interface ShiftInfo {
   cycle: { last_date: string; remaining_sessions: number; can_renew: boolean; slot: { room_id: number; weekday: number; shift: ShiftKey } } | null;
 }
 
+/** Regras de contratação de um plano, como a administração edita (categorias de sala, turnos, dias). */
+export interface PlanBooking {
+  kind: string | null;
+  shift_plan: boolean;
+  config: {
+    sessions: number;
+    renew_days: number;
+    weekdays: number[];
+    shifts: { key: ShiftKey; label: string; start: string; end: string; active: boolean }[];
+  } | null;
+  categories: HourPackage[];
+  rooms: { id: number; name: string }[];
+}
+
 export interface ShiftPreview {
   ok: boolean;
   amount_cents: number;

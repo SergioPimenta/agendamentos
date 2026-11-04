@@ -710,6 +710,11 @@ const migrations = [
       },
     ],
   },
+  {
+    // Regras de contratação editáveis no painel (turnos, dias, nº de reservas, antecedência da renovação), em JSON.
+    id: '032_plan_booking_config',
+    statements: () => [`ALTER TABLE plans ADD COLUMN booking_config TEXT NULL`],
+  },
 ];
 
 /**

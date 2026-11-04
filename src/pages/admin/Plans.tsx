@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { Pencil, Plus, Trash2, X } from 'lucide-react';
+import { BookingAdmin } from '../../components/plans/BookingAdmin';
 import { PLAN_ICONS, PlanCard } from '../../components/plans/PlanCard';
 import { Button } from '../../components/ui/Button';
 import { Badge, ErrorState, Skeleton, useConfirm, useToast } from '../../components/ui/Feedback';
@@ -214,6 +215,8 @@ function PlanForm({ open, plan, onClose, onSaved, onDelete }: { open: boolean; p
           {f.tiers.length > 0 && <Input label="Observação sob a tabela" maxLength={255} value={f.tiers_note} onChange={(e) => setF({ ...f, tiers_note: e.target.value })} />}
           {f.tiers.length > 0 && <p className="text-[12.5px] text-stone">A tabela é informativa: o desconto por faixa não é aplicado automaticamente nas cobranças.</p>}
         </section>
+
+        {plan && <BookingAdmin planId={plan.id} />}
 
         <section className="grid gap-4 sm:grid-cols-2">
           <h3 className="font-display text-[16px] font-medium text-ink sm:col-span-2">Regras de cobrança</h3>

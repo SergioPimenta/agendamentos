@@ -30,7 +30,42 @@ const MODE_TEXT = {
   immersion: { title: 'Plano Imersão — dia fixo na semana', label: 'Plano Imersão' },
 };
 const WEEKDAY_NAMES = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
-export const shiftMinutes = (key) => toMin(SHIFTS[key].end) - toMin(SHIFTS[key].start);
+export const winMinutes = (win) => toMin(win.end) - toMin(win.start);
+
+const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/**
+ * Regras de contratação de um plano (editáveis no painel): horários/turnos, dias da semana permitidos, quantas reservas
+ * por ciclo e com quantos dias de antecedência a renovação abre. O que não foi configurado usa o padrão acima.
+ * `all` traz todas as opções (inclusive as desligadas) para a tela de administração.
+ */
+export function shiftConfig(plan) {
+  const mode = plan?.kind === 'immersion' ? 'immersion' : 'shift';
+  let saved = {};
+  try { saved = JSON.parse(plan?.booking_config || '{}') ?? {}; } catch { saved = {}; }
+  const all = SHIFT_SETS[mode].map((key) => {
+    const s = saved.shifts?.[key] ?? {};
+    const base = SHIFTS[key];
+    return {
+      key,
+      label: String(s.label || base.label).slice(0, 40),
+      start: HHMM.test(s.start) ? s.start : base.start,
+      end: HHMM.test(s.end) ? s.end : base.end,
+      active: s.active !== false,
+    };
+  });
+  const clamp = (v, lo, hi, d) => (Number.isInteger(v) && v >= lo && v <= hi ? v : d);
+  const weekdays = Array.isArray(saved.weekdays) ? saved.weekdays.filter((d) => ALL_DAYS.includes(d)) : ALL_DAYS;
+  return {
+    mode,
+    sessions: clamp(saved.sessions, 1, 12, SESSIONS),
+    renew_days: clamp(saved.renew_days, 0, 31, 7),
+    weekdays,
+    all,
+    shifts: Object.fromEntries(all.filter((s) => s.active && toMin(s.end) > toMin(s.start)).map((s) => [s.key, { label: s.label, start: s.start, end: s.end }])),
+  };
+}
 
 const dmy = (d) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
 const parseMeta = (s) => {
@@ -46,15 +81,16 @@ const parseMeta = (s) => {
 const nextWeekday = (from, weekday) => addDays(from, (weekday - weekdayOf(from) + 7) % 7);
 
 /** Dias da semana em que cada turno cabe no horário de funcionamento do espaço (para a tela desabilitar o que não dá). */
-export async function shiftAvailability() {
+export async function shiftAvailability(cfg = shiftConfig(null)) {
   const hours = await getBusinessHours();
-  return [0, 1, 2, 3, 4, 5, 6].map((weekday) => {
+  return ALL_DAYS.map((weekday) => {
     const h = hours.find((x) => x.weekday === weekday);
+    const allowed = cfg.weekdays.includes(weekday);
     return {
       weekday,
       name: WEEKDAY_NAMES[weekday],
       shifts: Object.fromEntries(
-        Object.entries(SHIFTS).map(([key, s]) => [key, Boolean(h?.is_open) && toMin(h.open_time) <= toMin(s.start) && toMin(h.close_time) >= toMin(s.end)]),
+        Object.entries(cfg.shifts).map(([key, s]) => [key, allowed && Boolean(h?.is_open) && toMin(h.open_time) <= toMin(s.start) && toMin(h.close_time) >= toMin(s.end)]),
       ),
     };
   });
@@ -79,11 +115,14 @@ export async function activeShiftCycle(userId, planId = null, conn = db) {
   );
   if (!row?.last_date) return null;
   const last = metas[0];
+  const planRow = planId ? await conn.get('SELECT * FROM plans WHERE id = ?', [planId]) : null;
+  const renewDays = shiftConfig(planRow).renew_days;
   return {
     last_date: row.last_date,
     remaining_sessions: Number(row.n),
-    // Dá para renovar quando falta uma semana ou menos: o próximo ciclo começa logo depois da última reserva.
-    can_renew: daysBetween(today, row.last_date) <= 7,
+    // Dá para renovar quando falta pouco (padrão: uma semana): o próximo ciclo começa logo depois da última reserva.
+    can_renew: daysBetween(today, row.last_date) <= renewDays,
+    renew_days: renewDays,
     slot: { room_id: last.room_id, weekday: last.weekday, shift: last.shift },
   };
 }
@@ -92,13 +131,14 @@ export async function activeShiftCycle(userId, planId = null, conn = db) {
 export async function previewShift({ userId, planId, packageId, roomId, weekday, shift }) {
   const pkg = await db.get('SELECT * FROM hour_packages WHERE id = ? AND plan_id = ? AND active = 1', [packageId, planId]);
   if (!pkg) throw new HttpError(422, 'Escolha a categoria de sala do seu turno.');
-  const planRow = await db.get('SELECT kind FROM plans WHERE id = ?', [planId]);
-  const mode = planRow?.kind === 'immersion' ? 'immersion' : 'shift';
-  const win = SHIFT_SETS[mode].includes(shift) ? SHIFTS[shift] : null;
-  if (!win) throw new HttpError(422, mode === 'immersion' ? 'Escolha o horário: comercial ou integral.' : 'Escolha o turno: manhã, tarde ou noite.');
+  const cfg = shiftConfig(await db.get('SELECT * FROM plans WHERE id = ?', [planId]));
+  const mode = cfg.mode;
+  const win = cfg.shifts[shift] ?? null;
+  if (!win) throw new HttpError(422, mode === 'immersion' ? 'Escolha o horário: comercial ou integral.' : 'Escolha o turno disponível.');
   // Na Imersão cada pacote é uma categoria + horário (o preço muda com o horário).
   if (pkg.shift_key && pkg.shift_key !== shift) throw new HttpError(422, 'Esse valor não corresponde ao horário escolhido.');
   if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6) throw new HttpError(422, 'Escolha o dia da semana.');
+  if (!cfg.weekdays.includes(weekday)) throw new HttpError(422, 'Este dia da semana não está disponível para o plano.');
   const roomIds = JSON.parse(pkg.room_ids || '[]').map(Number);
   const room = await db.get('SELECT * FROM rooms WHERE id = ? AND active = 1', [roomId]);
   if (!room || (roomIds.length && !roomIds.includes(Number(room.id)))) throw new HttpError(422, 'Escolha uma sala da categoria selecionada.');
@@ -106,7 +146,7 @@ export async function previewShift({ userId, planId, packageId, roomId, weekday,
   const today = nowLocal().date;
   const cycle = await activeShiftCycle(userId, planId);
   if (cycle && !cycle.can_renew) {
-    throw new HttpError(409, `Você já tem um turno fixo em andamento. A renovação abre uma semana antes da última reserva (${dmy(cycle.last_date)}).`);
+    throw new HttpError(409, `Você já tem um turno fixo em andamento. A renovação abre ${cycle.renew_days} dia${cycle.renew_days === 1 ? '' : 's'} antes da última reserva (${dmy(cycle.last_date)}).`);
   }
   const base = cycle ? addDays(cycle.last_date, 1) : addDays(today, 1);
   const first = nextWeekday(base, weekday);
@@ -114,7 +154,7 @@ export async function previewShift({ userId, planId, packageId, roomId, weekday,
   const rules = await getSettings();
   const now = nowLocal();
   const dates = [];
-  for (let i = 0; i < SESSIONS; i++) {
+  for (let i = 0; i < cfg.sessions; i++) {
     const date = addDays(first, i * 7);
     try {
       validateWindow({ room, date, start: win.start, end: win.end, hours: hoursFor(hoursList, date), rules, now, isAdmin: true });
@@ -128,7 +168,7 @@ export async function previewShift({ userId, planId, packageId, roomId, weekday,
   return {
     ok: dates.every((d) => d.ok),
     amount_cents: Number(pkg.price_cents),
-    minutes: SESSIONS * shiftMinutes(shift),
+    minutes: cfg.sessions * winMinutes(win),
     mode,
     window: win,
     room: { id: Number(room.id), name: room.name },
@@ -146,7 +186,7 @@ export async function subscribeShift({ actor, plan, packageId, roomId, weekday, 
     throw new HttpError(409, `Esse turno não está livre em ${bad.map((d) => dmy(d.date)).join(', ')} (${bad[0].reason}) Escolha outro dia, turno ou sala.`);
   }
   const meta = {
-    kind: 'shift', mode: p.mode, room_id: p.room.id, room_name: p.room.name, weekday, shift, start: p.window.start, end: p.window.end,
+    kind: 'shift', mode: p.mode, shift_label: p.window.label, room_id: p.room.id, room_name: p.room.name, weekday, shift, start: p.window.start, end: p.window.end,
     dates: p.dates.map((d) => d.date), partner: partner?.email ? { name: partner.name ?? '', email: partner.email } : null, created: false,
   };
   return purchasePackage({ actor, packageId, viaPlan: true, options: { room_ids: [p.room.id], minutes: p.minutes, meta } });
@@ -166,6 +206,8 @@ export async function processShiftPurchases() {
     const meta = parseMeta(r.meta);
     if (!meta) continue;
     const text = MODE_TEXT[meta.mode] ?? MODE_TEXT.shift;
+    const shiftLabel = meta.shift_label ?? SHIFTS[meta.shift]?.label ?? meta.shift;
+    const sessions = meta.dates?.length || SESSIONS;
     // Só uma execução por compra: marca como "em andamento" com troca condicionada ao texto original.
     const claim = await db.run('UPDATE package_purchases SET meta = ? WHERE id = ? AND meta = ?', [JSON.stringify({ ...meta, created: true, booked: 0 }), r.id, r.meta]);
     if (!claim.changes) continue;
@@ -180,8 +222,8 @@ export async function processShiftPurchases() {
         actor: { id: Number(r.user_id), role: 'admin' },
         input: {
           user_id: Number(r.user_id), room_id: meta.room_id, date: first, start_time: meta.start, end_time: meta.end, attendees: partner.length ? 2 : 1,
-          title: text.title, notes: `${text.label} ${SHIFTS[meta.shift].label.toLowerCase()} (${meta.start} às ${meta.end}), ${WEEKDAY_NAMES[meta.weekday]}.`,
-          repeat_weeks: SESSIONS - 1, skip_conflicts: true, guests: partner,
+          title: text.title, notes: `${text.label} ${shiftLabel.toLowerCase()} (${meta.start} às ${meta.end}), ${WEEKDAY_NAMES[meta.weekday]}.`,
+          repeat_weeks: sessions - 1, skip_conflicts: true, guests: partner,
         },
       });
       result.booked = made.bookings.length;
@@ -200,7 +242,7 @@ export async function processShiftPurchases() {
       if (exists) await db.run('UPDATE contracts SET active = 1, end_date = NULL, amount_cents = ?, updated_at = ? WHERE id = ?', [Number(r.price_cents), nowStamp(), exists.id]);
       else {
         await createContract(Number(r.user_id), {
-          kind: `${text.label} · ${SHIFTS[meta.shift].label} · ${meta.room_name}`, unit: 'Coworking Harmonize o Ser', period: 'Mensal', signed_at: null, start_date: first, end_date: null,
+          kind: `${text.label} · ${shiftLabel} · ${meta.room_name}`, unit: 'Coworking Harmonize o Ser', period: 'Mensal', signed_at: null, start_date: first, end_date: null,
           fidelity_until: null, amount_cents: Number(r.price_cents), due_day: Number(today.slice(8, 10)), private_office: '', created_by_name: 'Sistema (contratação pelo app)',
           last_adjustment: null, adjustment_index: '', active: true,
           notes: `${WEEKDAY_NAMES[meta.weekday]}, ${meta.start} às ${meta.end}${meta.partner ? `. Parceiro(a): ${meta.partner.name || meta.partner.email}` : ''}.`,

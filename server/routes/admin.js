@@ -12,6 +12,7 @@ import { LEVELS, MODULES, canEnterPanel, fullAccess, hasAccess, normalizePermiss
 import { CONSUMING, OCCUPYING, getBusinessHours, inList } from '../services/availability.js';
 import { birthdaysOfMonth } from '../services/birthdays.js';
 import { addManualCredit, bankOverview, grantPackage, listPurchases, packageClientNames, presentPackage, revokeLot, roomNameMap } from '../services/packages.js';
+import { isShiftKind, shiftConfig, winMinutes } from '../services/fixedShift.js';
 import { PLAN_ICONS, PLAN_LAYOUTS, presentShowcase } from '../services/plans.js';
 import {
   BOOKING_SELECT,
@@ -1038,6 +1039,135 @@ router.delete(
     if (Number(used.n) > 0) throw new HttpError(409, 'Há clientes neste plano. Mova-os para outro plano ou desative este.');
     await db.run('DELETE FROM plans WHERE id = ?', [pid]);
     res.json({ ok: true });
+  }),
+);
+
+/* ---------------- contratação dos planos (categorias de sala, turnos, dias) ---------------- */
+
+const bookingInput = z.object({
+  // Só para planos de turno fixo / dia fixo.
+  config: z
+    .object({
+      sessions: z.coerce.number().int().min(1, 'Informe ao menos 1 reserva por ciclo').max(12),
+      renew_days: z.coerce.number().int().min(0).max(31),
+      weekdays: z.array(z.coerce.number().int().min(0).max(6)).max(7),
+      shifts: z.array(z.object({
+        key: z.enum(['morning', 'afternoon', 'night', 'commercial', 'full']),
+        label: z.string().trim().min(1, 'Informe o nome do turno').max(40),
+        start: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Horário inválido'),
+        end: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Horário inválido'),
+        active: z.boolean(),
+      })).max(5),
+    })
+    .optional(),
+  categories: z.array(z.object({
+    id: id.optional(),
+    name: z.string().trim().min(2, 'Informe o nome da categoria').max(80),
+    subtitle: z.string().trim().max(120).optional().default(''),
+    room_ids: z.array(id).max(100).optional().default([]),
+    price_cents: z.coerce.number().int().min(0).max(10_000_000),
+    minutes: z.coerce.number().int().min(0).max(100_000).optional().default(0),
+    validity_days: z.coerce.number().int().min(0).max(3650).optional().default(0),
+    shift_key: z.enum(['morning', 'afternoon', 'night', 'commercial', 'full']).nullable().optional().default(null),
+    active: z.boolean().optional().default(true),
+  })).max(60),
+});
+
+const bookingView = async (planId) => {
+  const plan = await db.get('SELECT * FROM plans WHERE id = ?', [planId]);
+  const cats = await db.query(
+    `SELECT k.*, (SELECT COUNT(*) FROM package_purchases p WHERE p.package_id = k.id AND p.status = 'paid') AS sold_count
+       FROM hour_packages k WHERE k.plan_id = ? ORDER BY k.sort_order, k.id`,
+    [planId],
+  );
+  const names = await roomNameMap();
+  const shift = isShiftKind(plan.kind);
+  const cfg = shift ? shiftConfig(plan) : null;
+  return {
+    kind: plan.kind ?? null,
+    shift_plan: shift,
+    config: cfg ? { sessions: cfg.sessions, renew_days: cfg.renew_days, weekdays: cfg.weekdays, shifts: cfg.all } : null,
+    categories: cats.map((c) => ({ ...presentPackage(c, names), sold_count: Number(c.sold_count) })),
+    rooms: [...names.entries()].map(([rid, name]) => ({ id: Number(rid), name })),
+  };
+};
+
+router.get(
+  '/plans/:id/booking',
+  asyncHandler(async (req, res) => {
+    const pid = Number(req.params.id);
+    if (!(await db.get('SELECT id FROM plans WHERE id = ?', [pid]))) throw new HttpError(404, 'Plano não encontrado.');
+    res.json(await bookingView(pid));
+  }),
+);
+
+router.put(
+  '/plans/:id/booking',
+  asyncHandler(async (req, res) => {
+    const pid = Number(req.params.id);
+    const plan = await db.get('SELECT * FROM plans WHERE id = ?', [pid]);
+    if (!plan) throw new HttpError(404, 'Plano não encontrado.');
+    const d = parse(bookingInput, req.body);
+    const shiftPlan = isShiftKind(plan.kind);
+    let cfg = null;
+    if (shiftPlan) {
+      if (!d.config) throw new HttpError(422, 'Informe as regras de contratação do plano.');
+      const allowed = new Set(shiftConfig(plan).all.map((s) => s.key));
+      for (const s of d.config.shifts) {
+        if (!allowed.has(s.key)) throw new HttpError(422, 'Turno inválido para este plano.');
+        if (s.end <= s.start) throw new HttpError(422, `O fim do turno "${s.label}" precisa ser depois do início.`);
+      }
+      if (!d.config.shifts.some((s) => s.active)) throw new HttpError(422, 'Deixe ao menos um turno ativo.');
+      if (!d.config.weekdays.length) throw new HttpError(422, 'Escolha ao menos um dia da semana.');
+      cfg = {
+        sessions: d.config.sessions,
+        renew_days: d.config.renew_days,
+        weekdays: [...new Set(d.config.weekdays)].sort(),
+        shifts: Object.fromEntries(d.config.shifts.map((s) => [s.key, { label: s.label, start: s.start, end: s.end, active: s.active }])),
+      };
+    }
+    await assertRoomsExist(d.categories.flatMap((c) => c.room_ids));
+    const existing = await db.query('SELECT id FROM hour_packages WHERE plan_id = ?', [pid]);
+    const owned = new Set(existing.map((r) => Number(r.id)));
+    if (d.categories.some((c) => c.id != null && !owned.has(c.id))) throw new HttpError(400, 'Categoria de outro plano. Atualize a página.');
+    const effective = shiftPlan ? shiftConfig({ ...plan, booking_config: JSON.stringify(cfg) }) : null;
+
+    await db.transaction(async (tx) => {
+      if (cfg) await tx.run('UPDATE plans SET booking_config = ? WHERE id = ?', [JSON.stringify(cfg), pid]);
+      let order = 100;
+      const keep = new Set();
+      for (const c of d.categories) {
+        order += 1;
+        // Nos planos de turno os minutos do ciclo vêm do horário × nº de reservas.
+        const win = shiftPlan ? (c.shift_key ? effective.all.find((s) => s.key === c.shift_key) : effective.all.find((s) => s.active)) : null;
+        const minutes = shiftPlan ? Math.max(15, (effective.sessions) * (win ? winMinutes(win) : 60)) : Math.max(15, c.minutes);
+        const rooms = c.room_ids.length ? JSON.stringify([...new Set(c.room_ids)]) : null;
+        if (c.id != null) {
+          keep.add(c.id);
+          await tx.run(
+            'UPDATE hour_packages SET name = ?, subtitle = ?, minutes = ?, price_cents = ?, validity_days = ?, room_ids = ?, shift_key = ?, active = ?, sort_order = ? WHERE id = ?',
+            [c.name, c.subtitle, minutes, c.price_cents, c.validity_days, rooms, c.shift_key, c.active ? 1 : 0, order, c.id],
+          );
+        } else {
+          await tx.run(
+            `INSERT INTO hour_packages (name, subtitle, description, minutes, price_cents, validity_days, icon, featured, features, active, sort_order, room_ids, plan_id, shift_key, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 0, '[]', ?, ?, ?, ?, ?, ?)`,
+            [c.name, c.subtitle, `Categoria do plano ${plan.name}.`, minutes, c.price_cents, c.validity_days, plan.icon || 'sun', c.active ? 1 : 0, order, rooms, pid, c.shift_key, nowStamp()],
+          );
+        }
+      }
+      // Categoria tirada da lista: some se nunca foi vendida; se já foi, só é desativada (o histórico fica).
+      for (const rid of owned) {
+        if (keep.has(rid)) continue;
+        const sold = await tx.get("SELECT COUNT(*) AS n FROM package_purchases WHERE package_id = ? AND status = 'paid'", [rid]);
+        if (Number(sold.n) > 0) await tx.run('UPDATE hour_packages SET active = 0 WHERE id = ?', [rid]);
+        else {
+          await tx.run("DELETE FROM package_purchases WHERE package_id = ? AND status = 'pending'", [rid]);
+          await tx.run('DELETE FROM hour_packages WHERE id = ?', [rid]);
+        }
+      }
+    });
+    res.json(await bookingView(pid));
   }),
 );
 

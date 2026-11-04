@@ -2,7 +2,7 @@ import { db } from '../db/index.js';
 import { HttpError } from '../utils/http.js';
 import { nowLocal, nowStamp } from '../utils/time.js';
 import { createCharge } from './onlinePayments.js';
-import { SESSIONS, SHIFTS, SHIFT_SETS, activeShiftCycle, isShiftKind, shiftAvailability, subscribeShift } from './fixedShift.js';
+import { activeShiftCycle, isShiftKind, shiftAvailability, shiftConfig, subscribeShift } from './fixedShift.js';
 import { activeComboCycle, presentPackage, purchasePackage, roomNameMap } from './packages.js';
 import { getSettings, onlinePaymentsReady } from './settings.js';
 
@@ -65,21 +65,18 @@ export async function plansForClient(userId) {
   // Planos com combos (ex.: Plano Raiz): o cliente escolhe a categoria de sala; cada combo é um pacote de horas do plano.
   const comboRows = await db.query('SELECT * FROM hour_packages WHERE active = 1 AND plan_id IS NOT NULL ORDER BY sort_order, id');
   const names = comboRows.length ? await roomNameMap() : null;
-  const hasShift = rows.some((p) => isShiftKind(p.kind));
-  const availability = hasShift ? await shiftAvailability() : [];
   const result = [];
   for (const p of rows) {
     const combos = comboRows.filter((c) => Number(c.plan_id) === Number(p.id));
     const isShift = isShiftKind(p.kind);
-    const mode = p.kind === 'immersion' ? 'immersion' : 'shift';
-    const keys = SHIFT_SETS[mode];
+    const cfg = isShift ? shiftConfig(p) : null;
     result.push({
       ...presentPlan(p),
       combos: combos.map((c) => presentPackage(c, names)),
       combo_cycle: combos.length && !isShift ? await activeComboCycle(userId, db, p.id) : null,
       // Turno fixo: horários dos turnos, dias em que cada um cabe e o ciclo em andamento (para renovar).
       shift: isShift
-        ? { mode, shifts: Object.fromEntries(keys.map((k) => [k, SHIFTS[k]])), availability, sessions: SESSIONS, cycle: await activeShiftCycle(userId, Number(p.id)) }
+        ? { mode: cfg.mode, shifts: cfg.shifts, availability: await shiftAvailability(cfg), sessions: cfg.sessions, cycle: await activeShiftCycle(userId, Number(p.id)) }
         : null,
     });
   }
