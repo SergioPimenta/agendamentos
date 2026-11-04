@@ -542,7 +542,9 @@ router.post(
   '/me/plans/:id/subscribe',
   asyncHandler(async (req, res) => {
     const planId = parse(z.coerce.number().int().positive(), req.params.id);
-    res.status(201).json(await subscribeToPlan({ actor: req.user, planId }));
+    // Planos com combos (Plano Raiz) pedem a categoria de sala escolhida.
+    const { package_id } = parse(z.object({ package_id: z.coerce.number().int().positive().optional() }), req.body ?? {});
+    res.status(201).json(await subscribeToPlan({ actor: req.user, planId, packageId: package_id ?? null }));
   }),
 );
 

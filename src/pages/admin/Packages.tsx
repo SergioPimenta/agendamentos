@@ -70,7 +70,7 @@ export default function AdminPackages() {
               key={p.id}
               pkg={p}
               className={cn(!p.active && 'opacity-60')}
-              badges={<>{!p.active && <Badge tone="mist">Inativo</Badge>}{p.client_ids.length > 0 && <Badge tone="clay">Só para {p.client_ids.length} cliente{p.client_ids.length === 1 ? '' : 's'}</Badge>}</>}
+              badges={<>{p.plan_id != null && <Badge tone="sage">Combo do plano</Badge>}{!p.active && <Badge tone="mist">Inativo</Badge>}{p.client_ids.length > 0 && <Badge tone="clay">Só para {p.client_ids.length} cliente{p.client_ids.length === 1 ? '' : 's'}</Badge>}</>}
               footer={
                 <div className="flex items-center justify-between gap-3">
                   <span className={cn('text-[12.5px]', p.featured ? 'text-cream/70' : 'text-stone-light')}>{p.sold_count ?? 0} venda{p.sold_count === 1 ? '' : 's'}</span>

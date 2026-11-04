@@ -49,6 +49,7 @@ export async function packageClientNames(rows, conn = db) {
 }
 
 export const presentPackage = (p, names = null, clientNames = null) => ({
+  plan_id: p.plan_id == null ? null : Number(p.plan_id), // combo de um plano (só aparece dentro do plano)
   room_ids: idList(p.room_ids),
   rooms: roomNamesOf(idList(p.room_ids), names),
   client_ids: idList(p.client_ids),
@@ -156,7 +157,8 @@ export async function balanceFor(userId) {
 
 /** Pacotes à venda, o saldo do cliente e se o pagamento online está ligado. */
 export async function packagesForClient(userId) {
-  const rows = await db.query('SELECT * FROM hour_packages WHERE active = 1 ORDER BY sort_order, id');
+  // Combos de plano (plan_id) não entram no catálogo: são vendidos só dentro do plano.
+  const rows = await db.query('SELECT * FROM hour_packages WHERE active = 1 AND plan_id IS NULL ORDER BY sort_order, id');
   const pending = await db.get("SELECT package_id FROM package_purchases WHERE user_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1", [userId]);
   const names = await roomNameMap();
   return {
@@ -168,9 +170,10 @@ export async function packagesForClient(userId) {
 }
 
 /** Compra um pacote: cria a compra pendente, a conta a receber e o link de pagamento online. */
-export async function purchasePackage({ actor, packageId }) {
+export async function purchasePackage({ actor, packageId, viaPlan = false }) {
   const pkg = await db.get('SELECT * FROM hour_packages WHERE id = ? AND active = 1', [packageId]);
-  if (!pkg || !visibleToClient(pkg, actor.id)) throw new HttpError(404, 'Pacote não encontrado.');
+  // Combo de plano só se compra pela tela do plano (lá valem as regras do ciclo).
+  if (!pkg || !visibleToClient(pkg, actor.id) || (pkg.plan_id != null && !viaPlan)) throw new HttpError(404, 'Pacote não encontrado.');
   if (!onlinePaymentsReady(await getSettings())) {
     throw new HttpError(422, 'O pagamento online ainda não está ativado. Fale com a recepção para comprar um pacote.');
   }
@@ -217,12 +220,36 @@ export async function purchasePackage({ actor, packageId }) {
 
 /** Chamado quando a conta do pacote é paga (online ou baixa manual): a compra vira saldo, com a validade a partir de hoje. */
 export async function activatePackageForReceivable(receivableId, conn = db) {
-  const p = await conn.get("SELECT id, validity_days FROM package_purchases WHERE receivable_id = ? AND status = 'pending'", [receivableId]);
+  const p = await conn.get("SELECT id, user_id, package_id, validity_days FROM package_purchases WHERE receivable_id = ? AND status = 'pending'", [receivableId]);
   if (!p) return false;
   const today = nowLocal().date;
   const expires = Number(p.validity_days) > 0 ? addDays(today, Number(p.validity_days)) : null;
   await conn.run("UPDATE package_purchases SET status = 'paid', paid_at = ?, expires_at = ?, updated_at = ? WHERE id = ?", [nowStamp(), expires, nowStamp(), p.id]);
+  await joinPlanOfPackage(conn, p.user_id, p.package_id);
   return true;
+}
+
+/** Combo de plano pago: o cliente passa a ter o plano ao qual o combo pertence (ex.: Plano Raiz). */
+async function joinPlanOfPackage(conn, userId, packageId) {
+  const pkg = packageId == null ? null : await conn.get('SELECT plan_id FROM hour_packages WHERE id = ?', [packageId]);
+  if (pkg?.plan_id != null) await conn.run('UPDATE users SET plan_id = ?, updated_at = ? WHERE id = ?', [pkg.plan_id, nowStamp(), userId]);
+}
+
+/**
+ * Ciclo em andamento de um combo de plano: lote pago, ainda dentro da validade e com horas sobrando.
+ * Os créditos do combo não acumulam: só dá para contratar o próximo ciclo quando este termina (vence ou acaba).
+ */
+export async function activeComboCycle(userId, conn = db) {
+  const today = nowLocal().date;
+  const lots = await packageLots(conn, userId, today);
+  const combos = await conn.query(
+    `SELECT p.id FROM package_purchases p JOIN hour_packages k ON k.id = p.package_id
+      WHERE p.user_id = ? AND p.status = 'paid' AND k.plan_id IS NOT NULL`,
+    [userId],
+  );
+  const ids = new Set(combos.map((r) => Number(r.id)));
+  const lot = lots.find((l) => ids.has(l.id) && l.remaining > 0);
+  return lot ? { expires_at: lot.expires_at, remaining: lot.remaining, name: lot.name } : null;
 }
 
 /** Venda registrada pela administração (ex.: paga no balcão): já entra paga, no saldo e no Financeiro. */
@@ -240,6 +267,7 @@ export async function grantPackage({ actor, userId, packageId, method = 'outro' 
      VALUES (?, ?, ?, ?, ?, ?, ?, 'paid', ?, ?, ?, ?, ?)`,
     [userId, pkg.id, pkg.name, pkg.minutes, pkg.price_cents, pkg.validity_days, pkg.room_ids ?? null, stamp, expires, actor.id, stamp, stamp],
   );
+  await joinPlanOfPackage(db, userId, pkg.id);
   if (Number(pkg.price_cents) > 0) {
     const rec = await db.run(
       `INSERT INTO receivables (user_id, description, category, amount_cents, due_date, status, paid_at, payment_method, ref, package_purchase_id, created_at, updated_at)

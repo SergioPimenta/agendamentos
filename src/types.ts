@@ -491,6 +491,8 @@ export interface FinanceOverview {
 /** Pacote de horas à venda (configurado pela administração em Pacotes de horas). */
 export interface HourPackage {
   id: number;
+  /** Plano ao qual o pacote pertence (combo); null = pacote avulso do catálogo. */
+  plan_id: number | null;
   name: string;
   subtitle: string;
   description: string;
@@ -575,6 +577,10 @@ export interface PackagePurchase {
 
 /** Plano como o cliente o vê na hora de escolher. */
 export interface ClientPlan extends PlanShowcase {
+  /** Combos do plano (ex.: Plano Raiz): um pacote de horas por categoria de sala. */
+  combos: HourPackage[];
+  /** Ciclo do combo em andamento (horas que sobram e validade); null quando não há. */
+  combo_cycle: { expires_at: string | null; remaining: number; name: string } | null;
   id: number;
   name: string;
   description: string;

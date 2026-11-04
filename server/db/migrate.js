@@ -550,6 +550,62 @@ const migrations = [
       },
     ],
   },
+  {
+    // Plano Raiz (Ciclo Essencial): combo de 4 horas pré-pagas, com valor fechado por categoria de sala, válido por 30 dias.
+    // Cada categoria é um pacote de horas "do plano" (hour_packages.plan_id): não aparece no catálogo de pacotes, só dentro do plano.
+    id: '029_plano_raiz_combos',
+    statements: () => [
+      `ALTER TABLE hour_packages ADD COLUMN plan_id INT NULL`,
+      async (tx) => {
+        const plan = await tx.get("SELECT id FROM plans WHERE name = 'Plano Raiz'");
+        if (!plan) return;
+        const roomIds = async (slugs) => {
+          const out = [];
+          for (const slug of slugs) {
+            const r = await tx.get('SELECT id FROM rooms WHERE slug = ? OR slug = ?', [slug, `sala-${slug}`]);
+            if (r) out.push(Number(r.id));
+          }
+          return out;
+        };
+        const combos = [
+          { name: 'Plano Raiz · Brisa', sub: 'Sala Brisa · 4 horas', cents: 11200, slugs: ['brisa'] },
+          { name: 'Plano Raiz · Flor', sub: 'Sala Flor · 4 horas', cents: 13780, slugs: ['flor'] },
+          { name: 'Plano Raiz · Premium Maca', sub: 'Salas Sol e Terra · 4 horas', cents: 16000, slugs: ['sol', 'terra'] },
+          { name: 'Plano Raiz · Premium Poltronas', sub: 'Salas Mar e Árvore · 4 horas', cents: 18000, slugs: ['mar', 'arvore'] },
+          { name: 'Plano Raiz · Cachoeira', sub: 'Sala Cachoeira · 4 horas', cents: 21850, slugs: ['cachoeira'] },
+        ];
+        const features = JSON.stringify(['4 horas pré-pagas, com valor fechado', 'Créditos válidos por 30 dias, não cumulativos', 'Gerencie seus agendamentos em Minhas reservas']);
+        let order = 0;
+        for (const c of combos) {
+          order += 1;
+          if (await tx.get('SELECT id FROM hour_packages WHERE name = ?', [c.name])) continue;
+          const ids = await roomIds(c.slugs);
+          await tx.run(
+            `INSERT INTO hour_packages (name, subtitle, description, minutes, price_cents, validity_days, icon, featured, features, active, sort_order, room_ids, plan_id, created_at)
+             VALUES (?, ?, ?, 240, ?, 30, 'sprout', 0, ?, 1, ?, ?, ?, ?)`,
+            [c.name, c.sub, 'Combo do Plano Raiz: pague uma vez por ciclo e use as 4 horas nesta categoria de sala.', c.cents, features, order, ids.length ? JSON.stringify(ids) : null, Number(plan.id), nowStamp()],
+          );
+        }
+        // O plano em si deixa de ter mensalidade única: o valor depende da categoria de sala escolhida.
+        await tx.run(
+          `UPDATE plans SET price_cents = 0, included_minutes = 0, subtitle = ?, price_label = ?, price_note = ?, cta_label = ?, features = ? WHERE id = ?`,
+          [
+            'Ciclo Essencial · Combo de 4 horas',
+            'A partir de R$ 112,00',
+            '/ciclo de 30 dias, 4 horas',
+            'Escolher sala e contratar',
+            JSON.stringify([
+              'Combo de 4 horas pré-pagas, pago no cartão ou no Pix pelo app',
+              'Valor fechado por categoria: Brisa, Flor, Premium Maca (Sol e Terra), Premium Poltronas (Mar e Árvore) e Cachoeira',
+              'Créditos válidos por 30 dias, não cumulativos',
+              'Gerencie seus agendamentos em Minhas reservas',
+            ]),
+            Number(plan.id),
+          ],
+        );
+      },
+    ],
+  },
 ];
 
 /**

@@ -2,6 +2,7 @@ import { db } from '../db/index.js';
 import { HttpError } from '../utils/http.js';
 import { nowLocal, nowStamp } from '../utils/time.js';
 import { createCharge } from './onlinePayments.js';
+import { activeComboCycle, presentPackage, purchasePackage, roomNameMap } from './packages.js';
 import { getSettings, onlinePaymentsReady } from './settings.js';
 
 /**
@@ -59,8 +60,15 @@ export async function plansForClient(userId) {
     "SELECT plan_id FROM receivables WHERE user_id = ? AND status = 'pending' AND plan_id IS NOT NULL ORDER BY id DESC LIMIT 1",
     [userId],
   );
+  // Planos com combos (ex.: Plano Raiz): o cliente escolhe a categoria de sala; cada combo é um pacote de horas do plano.
+  const comboRows = await db.query('SELECT * FROM hour_packages WHERE active = 1 AND plan_id IS NOT NULL ORDER BY sort_order, id');
+  const names = comboRows.length ? await roomNameMap() : null;
+  const cycle = comboRows.length ? await activeComboCycle(userId) : null;
   return {
-    plans: rows.map(presentPlan),
+    plans: rows.map((p) => {
+      const combos = comboRows.filter((c) => Number(c.plan_id) === Number(p.id));
+      return { ...presentPlan(p), combos: combos.map((c) => presentPackage(c, names)), combo_cycle: combos.length ? cycle : null };
+    }),
     current_plan_id: user?.plan_id == null ? null : Number(user.plan_id),
     pending_plan_id: pending ? Number(pending.plan_id) : null,
     online_payments: onlinePaymentsReady(await getSettings()),
@@ -68,12 +76,25 @@ export async function plansForClient(userId) {
 }
 
 /** Escolhe um plano. Devolve `{ activated: true }` quando já valeu, ou `{ payment }` com o link para pagar. */
-export async function subscribeToPlan({ actor, planId }) {
+export async function subscribeToPlan({ actor, planId, packageId = null }) {
   const plan = await db.get('SELECT * FROM plans WHERE id = ? AND active = 1', [planId]);
   if (!plan) throw new HttpError(404, 'Plano não encontrado.');
   const user = await db.get('SELECT id, plan_id FROM users WHERE id = ? AND active = 1', [actor.id]);
-  if (user.plan_id != null && Number(user.plan_id) === Number(plan.id)) throw new HttpError(409, 'Este já é o seu plano.');
   if (Number(plan.contact_only)) throw new HttpError(422, 'Este plano é contratado com a recepção. Fale com a gente pelo WhatsApp.');
+
+  // Plano com combos (Plano Raiz): contrata-se um combo por ciclo de 30 dias, na categoria de sala escolhida. Pode renovar quando o ciclo acabar.
+  const combos = await db.query('SELECT id FROM hour_packages WHERE plan_id = ? AND active = 1', [plan.id]);
+  if (combos.length) {
+    if (!packageId || !combos.some((c) => Number(c.id) === Number(packageId))) throw new HttpError(422, 'Escolha a categoria de sala do seu combo.');
+    const cycle = await activeComboCycle(actor.id);
+    if (cycle) {
+      const until = cycle.expires_at ? ` Elas valem até ${cycle.expires_at.slice(8, 10)}/${cycle.expires_at.slice(5, 7)}.` : '';
+      throw new HttpError(409, `Você ainda tem ${Math.floor(cycle.remaining / 60)}h${cycle.remaining % 60 ? String(cycle.remaining % 60).padStart(2, '0') : ''} do ciclo atual.${until} Os créditos não acumulam: a renovação fica disponível quando o ciclo terminar.`);
+    }
+    return { activated: false, ...(await purchasePackage({ actor, packageId: Number(packageId), viaPlan: true })) };
+  }
+
+  if (user.plan_id != null && Number(user.plan_id) === Number(plan.id)) throw new HttpError(409, 'Este já é o seu plano.');
 
   // Qualquer troca anterior que ficou sem pagar perde o sentido ao escolher outro plano.
   await db.run("DELETE FROM receivables WHERE user_id = ? AND status = 'pending' AND plan_id IS NOT NULL AND plan_id <> ?", [actor.id, plan.id]);
