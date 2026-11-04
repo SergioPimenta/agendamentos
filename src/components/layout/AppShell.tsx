@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   BarChart3, Cake, CalendarCheck, CalendarDays, CalendarPlus, DoorOpen, LayoutDashboard, LifeBuoy, LogOut, Menu,
-  Hourglass, Mail, Package, QrCode, Receipt, Settings, Wallet, ShieldBan, Tags, UserRound, Users, X, ClipboardList, Leaf,
+  Hourglass, Mail, Package, Plug, QrCode, Receipt, Settings, Wallet, ShieldBan, Tags, UserRound, Users, X, ClipboardList, Leaf,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { cn } from '../../lib/cn';
@@ -42,6 +42,7 @@ const adminNav: NavItem[] = [
   { to: '/admin/qr-codes', label: 'QR das salas', icon: <QrCode size={18} />, module: 'qrcodes' },
   { to: '/admin/modelos-de-email', label: 'Modelos de e-mail', icon: <Mail size={18} />, module: 'email_templates' },
   { to: '/admin/configuracoes', label: 'Configurações', icon: <Settings size={18} />, module: 'settings' },
+  { to: '/admin/conexa', label: 'Integração Conexa', icon: <Plug size={18} />, module: 'settings' },
 ];
 
 export function AppShell({ variant }: { variant: 'client' | 'admin' }) {

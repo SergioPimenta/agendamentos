@@ -39,6 +39,7 @@ const AdminPlans = lazy(() => import('./pages/admin/Plans'));
 const AdminBlocks = lazy(() => import('./pages/admin/Blocks'));
 const AdminReports = lazy(() => import('./pages/admin/Reports'));
 const AdminSettings = lazy(() => import('./pages/admin/Settings'));
+const AdminConexa = lazy(() => import('./pages/admin/Conexa'));
 const AdminEmailTemplates = lazy(() => import('./pages/admin/EmailTemplates'));
 const AdminQrCodes = lazy(() => import('./pages/admin/QrCodes'));
 const FinanceLayout = lazy(() => import('./pages/admin/finance/FinanceLayout'));
@@ -168,6 +169,7 @@ export default function App() {
               <Route element={<RequireModule module="qrcodes" />}><Route path="qr-codes" element={<AdminQrCodes />} /></Route>
               <Route element={<RequireModule module="email_templates" />}><Route path="modelos-de-email" element={<AdminEmailTemplates />} /></Route>
               <Route element={<RequireModule module="settings" />}><Route path="configuracoes" element={<AdminSettings />} /></Route>
+              <Route element={<RequireModule module="settings" />}><Route path="conexa" element={<AdminConexa />} /></Route>
             </Route>
           </Route>
 

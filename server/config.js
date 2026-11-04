@@ -52,6 +52,15 @@ export const config = {
     apiUrl: (process.env.PAGARME_API_URL || 'https://api.pagar.me/core/v5').replace(/\/$/, ''),
     webhookToken: process.env.PAGARME_WEBHOOK_TOKEN || '',
   },
+  // Conexa (sistema anterior): recebe os avisos de reserva (webhook) e, com o token, lê a API para conferir. Tudo só no servidor.
+  conexa: {
+    // Subdomínio ("minhaempresa") ou a URL completa da API v2.
+    url: process.env.CONEXA_URL || '',
+    token: process.env.CONEXA_TOKEN || '',
+    webhookToken: process.env.CONEXA_WEBHOOK_TOKEN || '',
+    minIntervalMs: Number(process.env.CONEXA_MIN_INTERVAL_MS ?? 1100), // limite oficial: 60 chamadas por minuto
+    syncMinutes: Number(process.env.CONEXA_SYNC_MINUTES) || 60,
+  },
   // Segredo do Vercel Cron (header Authorization: Bearer ...) para a rotina de limpeza em /api/cron/sweep.
   cronSecret: process.env.CRON_SECRET || '',
   // Na Vercel o disco do projeto é somente leitura; /tmp aceita escrita, mas some entre execuções.

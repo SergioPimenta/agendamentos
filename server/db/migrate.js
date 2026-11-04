@@ -761,6 +761,29 @@ const migrations = [
       },
     ],
   },
+  {
+    // Integração com a Conexa: salas (local da Conexa ↔ sala daqui) e o registro do que chegou (webhook ou API).
+    id: '034_conexa',
+    statements: () => [
+      `CREATE TABLE IF NOT EXISTS conexa_places (
+        place_id VARCHAR(20) NOT NULL PRIMARY KEY,
+        name VARCHAR(160) NOT NULL DEFAULT '',
+        room_id INT NULL,
+        created_at VARCHAR(19) NOT NULL
+      )${tail()}`,
+      `CREATE TABLE IF NOT EXISTS conexa_events (
+        id ${pk()},
+        source VARCHAR(10) NOT NULL,
+        kind VARCHAR(30) NOT NULL,
+        booking_ref VARCHAR(20) NULL,
+        status VARCHAR(10) NOT NULL,
+        message VARCHAR(400) NOT NULL DEFAULT '',
+        payload TEXT NULL,
+        created_at VARCHAR(19) NOT NULL
+      )${tail()}`,
+      `CREATE INDEX idx_conexa_events_created ON conexa_events (created_at)`,
+    ],
+  },
 ];
 
 /**
